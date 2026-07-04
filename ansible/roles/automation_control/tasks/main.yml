@@ -1,0 +1,145 @@
+---
+- name: Update apt cache and install base essentials
+  apt:
+    name: "{{ essential_packages }}"
+    state: present
+    update_cache: yes
+
+- name: Ensure keyrings directory exists
+  file:
+    path: /usr/share/keyrings
+    state: directory
+    mode: '0755'
+
+# --- Install Terraform ---
+- name: Download HashiCorp GPG apt Key
+  get_url:
+    url: "{{ terraform_gpg_url }}"
+    dest: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+    mode: '0644'
+
+- name: Add HashiCorp Repository
+  apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] {{ terraform_repo_url }} {{ ansible_distribution_release }} main"
+    state: present
+    filename: hashicorp
+
+- name: Install Terraform
+  apt:
+    name: terraform
+    state: present
+
+# --- Install Ansible via Pipx (Debian 13 PEP 668 Compliant) ---
+- name: Install pipx via apt
+  apt:
+    name: pipx
+    state: present
+
+- name: Check if pipx global path is already in environment
+  command: grep -q "/usr/local/bin" /etc/environment
+  register: pipx_path_check
+  failed_when: false
+  changed_when: false
+
+- name: Ensure pipx global path is configured for the user
+  command: pipx ensurepath --global
+  become: true
+  when: pipx_path_check.rc != 0
+
+- name: Install Ansible core and community collections via pipx
+  command: pipx install --global ansible
+  args:
+    creates: /usr/local/bin/ansible
+
+# --- Install Ansible-Semaphore (Official GitHub Package Method) ---
+- name: Fetch latest Semaphore release metadata
+  uri:
+    url: "{{ semaphore_api_url }}"
+    return_content: yes
+  register: semaphore_meta
+
+- name: Extract exact download URL for the amd64 deb package
+  set_fact:
+    semaphore_deb_url: >-
+      {{
+        (semaphore_meta.content | from_json).assets
+        | selectattr('name', 'search', '_linux_amd64.deb')
+        | map(attribute='browser_download_url')
+        | first
+      }}
+
+- name: Download latest Semaphore .deb package dynamically
+  get_url:
+    url: "{{ semaphore_deb_url }}"
+    dest: "/tmp/semaphore_latest_amd64.deb"
+    mode: '0644'
+
+- name: Install Semaphore via local apt package file
+  apt:
+    deb: "/tmp/semaphore_latest_amd64.deb"
+    state: present
+
+# --- Configure & Initialize Semaphore ---
+- name: Ensure Semaphore configuration directory exists
+  file:
+    path: /etc/semaphore
+    state: directory
+    mode: '0755'
+
+- name: Ensure BoltDB data directory exists
+  file:
+    path: /var/lib/semaphore
+    state: directory
+    mode: '0700'
+
+- name: Deploy Semaphore configuration from Vault template
+  template:
+    src: semaphore_config.json.j2
+    dest: /etc/semaphore/config.json
+    mode: '0600'
+
+- name: Run Semaphore database migrations
+  command: semaphore migrate --config /etc/semaphore/config.json
+  register: migrate_result
+  changed_when: "'Migrations applied' in migrate_result.stdout or 'database up to date' in migrate_result.stdout"
+
+- name: Initialize Semaphore Admin User
+  command: >
+    semaphore user add --admin 
+    --login rich 
+    --name "Rich" 
+    --email "rich@localhost.local" 
+    --password "{{ vault_semaphore_admin_password }}" 
+    --config /etc/semaphore/config.json
+  register: user_result
+  failed_when: 
+    - user_result.rc != 0 
+    - "'user already exists' not in user_result.stderr"
+  changed_when: 
+    - user_result.rc == 0
+
+- name: Deploy Semaphore Systemd Service File
+  copy:
+    dest: /etc/systemd/system/semaphore.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Ansible Semaphore UI
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=root
+      ExecStart=/usr/bin/semaphore service --config /etc/semaphore/config.json
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+  register: systemd_file
+
+- name: Enable and start Semaphore service
+  systemd:
+    name: semaphore
+    state: started
+    enabled: yes
+    daemon_reload: "{{ systemd_file.changed }}"

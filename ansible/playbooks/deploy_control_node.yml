@@ -1,0 +1,10 @@
+---
+- name: Configure Debian Automation Control Node
+  hosts: control_node
+  become: yes
+
+  vars_files:
+    - ../group_vars/all/vault.yml
+
+  roles:
+    - role: ../roles/automation_control

@@ -1,0 +1,17 @@
+---
+# Essential system packages
+essential_packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - unzip
+  - jq
+
+# Terraform configuration
+terraform_repo_url: "https://apt.releases.hashicorp.com"
+terraform_gpg_url: "https://apt.releases.hashicorp.com/gpg"
+
+# Semaphore dynamic downloader
+semaphore_api_url: "https://api.github.com/repos/semaphoreui/semaphore/releases/latest"
