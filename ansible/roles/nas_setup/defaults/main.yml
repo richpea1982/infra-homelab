@@ -31,6 +31,8 @@ nas_datasets:
     local_only: true
   - name: "pbs-backups"
     recordsize: "1m"
+  - name: "pve1-backups"
+    recordsize: "1m"
   - name: "k3s-backups"
     recordsize: "1m"
   - name: "jellyfin"
