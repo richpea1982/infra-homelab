@@ -9,7 +9,6 @@
       - zfsutils-linux
       - python3-boto3  # <--- Add this right here
     state: present
-  become: true
 
 # ZFS Configuration
 nas_pool_name: "storage_pool"
