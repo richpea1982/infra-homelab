@@ -19,6 +19,14 @@
     cache_valid_time: 3600
   become: true
 
+- name: Install Kernel Headers, DKMS, and build tools
+  apt:
+    name:
+      - "linux-headers-{{ ansible_facts['kernel'] }}"
+      - dkms
+      - build-essential
+    state: present
+
 - name: Install SMB, NFS, and ZFS utilities
   apt:
     name: "{{ nas_packages }}"
