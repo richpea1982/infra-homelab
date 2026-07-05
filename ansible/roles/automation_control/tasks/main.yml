@@ -84,39 +84,70 @@
   file:
     path: /etc/semaphore
     state: directory
+    owner: root
+    group: root
     mode: '0755'
 
-- name: Ensure BoltDB data directory exists
+- name: Ensure Data directory exists
   file:
     path: /var/lib/semaphore
     state: directory
-    mode: '0700'
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure SQLite database file physically exists
+  file:
+    path: /var/lib/semaphore/database.sqlite
+    state: touch
+    owner: root
+    group: root
+    mode: '0644'
+    modification_time: preserve
+    access_time: preserve
 
 - name: Deploy Semaphore configuration from Vault template
   template:
     src: semaphore_config.json.j2
     dest: /etc/semaphore/config.json
-    mode: '0600'
+    owner: root
+    group: root
+    mode: '0640'
 
 - name: Run Semaphore database migrations
-  command: semaphore migrate --config /etc/semaphore/config.json
+  command: /usr/bin/semaphore migrate --config /etc/semaphore/config.json
   register: migrate_result
-  changed_when: "'Migrations applied' in migrate_result.stdout or 'database up to date' in migrate_result.stdout"
+  changed_when: migrate_result.rc == 0
 
 - name: Initialize Semaphore Admin User
   command: >
-    semaphore user add --admin 
+    /usr/bin/semaphore user add --admin 
     --login rich 
-    --name "Rich" 
-    --email "rich@localhost.local" 
-    --password "{{ vault_semaphore_admin_password }}" 
+    --name '{{ semaphore_user }}' 
+    --email '{{ semaphore_email }}' 
+    --password '{{ vault_semaphore_admin_password }}' 
     --config /etc/semaphore/config.json
   register: user_result
   failed_when: 
     - user_result.rc != 0 
     - "'user already exists' not in user_result.stderr"
+    - "'user already exists' not in user_result.stdout"
+    - "'UNIQUE constraint failed' not in user_result.stderr" # Catches the Go panic
   changed_when: 
     - user_result.rc == 0
+
+- name: Force update admin password if user already exists
+  command: >
+    /usr/bin/semaphore user change-by-login 
+    --login rich 
+    --password '{{ vault_semaphore_admin_password }}' 
+    --config /etc/semaphore/config.json
+  when: >
+    user_result.rc != 0 and 
+    ('user already exists' in user_result.stderr or 
+     'user already exists' in user_result.stdout or 
+     'UNIQUE constraint failed' in user_result.stderr)
+  changed_when: true
 
 - name: Deploy Semaphore Systemd Service File
   copy:

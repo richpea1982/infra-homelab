@@ -1,15 +1,17 @@
 {
   "mysql": {},
   "postgres": {},
-  "bolt": {
-    "path": "/var/lib/semaphore/database.boltdb"
+  "sqlite": {
+    "host": "/var/lib/semaphore/database.sqlite"
   },
-  "dialect": "bolt",
+  "dialect": "sqlite",
   "port": ":3000",
   "interface": "0.0.0.0",
   "tmp_path": "/tmp/semaphore",
   "web_host": "http://100.119.135.37:3000",
   "cookie_encryption": "{{ vault_semaphore_cookie_encryption }}",
+  "cookie_hash": "{{ vault_semaphore_cookie_hash }}",
+  "access_key_encryption": "{{ vault_semaphore_access_key_encryption  }}",
   "email_alert": false,
   "telegram_alert": false,
   "slack_alert": false,
