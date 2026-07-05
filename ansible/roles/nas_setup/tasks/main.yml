@@ -1,6 +1,8 @@
 ---
 - name: Update system and install NAS packages
   include_tasks: packages.yml
+  become: true # <-- Forces everything in packages.yml to run as root
 
 - name: Configure ZFS Storage
   include_tasks: zfs.yml
+  become: true # <-- Forces everything in zfs.yml to run as root
