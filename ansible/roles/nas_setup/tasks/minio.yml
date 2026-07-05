@@ -90,3 +90,22 @@
     name: minio
     state: restarted
   when: minio_env_updated.changed and not minio_service_updated.changed
+
+- name: Wait for MinIO API to become responsive
+  uri:
+    url: "http://127.0.0.1:9000/minio/health/live"
+    status_code: 200
+  retries: 10
+  delay: 3
+  register: minio_health
+  until: minio_health.status == 200
+
+- name: Authenticate and provision Terraform state bucket on MinIO
+  amazon.aws.s3_bucket:
+    name: homelab-tf-state
+    state: present
+    # Enforce standard Object Locking parameters for native S3 transaction locks
+    object_lock: true
+    endpoint_url: "http://127.0.0.1:9000"
+    aws_access_key: "{{ vault_minio_root_user }}"
+    aws_secret_key: "{{ vault_minio_root_password }}"
