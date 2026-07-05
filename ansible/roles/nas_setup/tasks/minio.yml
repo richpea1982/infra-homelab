@@ -105,7 +105,7 @@
     name: homelab-tf-state
     state: present
     # Enforce standard Object Locking parameters for native S3 transaction locks
-    object_lock: true
+    object_lock_enabled: true
     endpoint_url: "http://127.0.0.1:9000"
     aws_access_key: "{{ vault_minio_root_user }}"
     aws_secret_key: "{{ vault_minio_root_password }}"
