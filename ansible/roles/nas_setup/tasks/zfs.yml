@@ -1,4 +1,9 @@
 ---
+- name: Ensure ZFS kernel module is loaded
+  modprobe:
+    name: zfs
+    state: present
+
 - name: Ensure parent mount directory exists
   file:
     path: "{{ nas_mount_point_base }}"
