@@ -41,6 +41,7 @@ nas_datasets:
     recordsize: "256k"
 
 # MinIO Configuration
+minio_download_url: "https://dl.min.io/server/minio/release/linux-amd64/minio"
 minio_version: "RELEASE.2026-07-03T16-39-21Z"
 minio_user: "minio"
 minio_group: "minio"
