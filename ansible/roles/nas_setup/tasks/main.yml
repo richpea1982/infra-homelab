@@ -6,4 +6,10 @@
 
     - name: Configure ZFS Storage
       include_tasks: zfs.yml
+
+    - name: Configure NFS Exports
+      include_tasks: file_share.yml
+
+    - name: Deploy Standalone MinIO Backend
+      include_tasks: minio.yml
   become: true

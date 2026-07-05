@@ -1,0 +1,91 @@
+---
+- name: Create MinIO system group
+  group:
+    name: "{{ minio_group }}"
+    system: yes
+
+- name: Create MinIO system user
+  user:
+    name: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    system: yes
+    shell: /usr/sbin/nologin
+    create_home: no
+
+- name: Download MinIO binary
+  get_url:
+    url: "https://dl.min.io/server/minio/release/linux-amd64/archive/minio.{{ minio_version }}"
+    dest: /usr/local/bin/minio
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Ensure MinIO configuration directory exists
+  file:
+    path: /etc/minio
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy MinIO environment configuration
+  no_log: true
+  content: |
+    MINIO_VOLUMES="{{ nas_mount_point_base }}/minio"
+    MINIO_OPTS="--address :9000 --console-address :9001"
+    MINIO_ROOT_USER="{{ vault_minio_root_user }}"
+    MINIO_ROOT_PASSWORD="{{ vault_minio_root_password }}"
+  dest: /etc/minio/minio.env
+  owner: root
+  group: "{{ minio_group }}"
+  mode: '0640'
+  register: minio_env_updated
+
+- name: Fix ownership of ZFS MinIO data directory
+  file:
+    path: "{{ nas_mount_point_base }}/minio"
+    state: directory
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    recurse: no
+
+- name: Deploy MinIO systemd service unit
+  copy:
+    dest: /etc/systemd/system/minio.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=MinIO High Performance Object Storage
+      Documentation=https://docs.min.io
+      After=network.target
+      AssertFileIsExecutable=/usr/local/bin/minio
+
+      [Service]
+      Type=simple
+      User={{ minio_user }}
+      Group={{ minio_group }}
+      ProtectProc=invisible
+      EnvironmentFile=/etc/minio/minio.env
+      ExecStart=/usr/local/bin/minio server $MINIO_OPTS $MINIO_VOLUMES
+      Restart=always
+      LimitNOFILE=65536
+      TasksMax=infinity
+      TimeoutStopSec=infinity
+      SendSIGKILL=no
+
+      [Install]
+      WantedBy=multi-user.target
+  register: minio_service_updated
+
+- name: Enable and start MinIO service
+  systemd:
+    name: minio
+    state: started
+    enabled: yes
+    daemon_reload: "{{ minio_service_updated.changed }}"
+
+- name: Restart MinIO if configuration changed
+  systemd:
+    name: minio
+    state: restarted
+  when: minio_env_updated.changed and not minio_service_updated.changed

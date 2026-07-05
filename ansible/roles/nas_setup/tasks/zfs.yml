@@ -1,4 +1,19 @@
 ---
+- name: Apply ZFS ARC limits to protect 8GB host memory
+  copy:
+    dest: /etc/modprobe.d/zfs.conf
+    content: |
+      options zfs zfs_arc_max=2147483648
+      options zfs zfs_arc_min=1073741824
+    owner: root
+    group: root
+    mode: '0644'
+  register: zfs_conf_updated
+
+- name: Update initramfs if ZFS configuration changed
+  command: update-initramfs -u
+  when: zfs_conf_updated.changed
+
 - name: Ensure ZFS kernel module is loaded
   modprobe:
     name: zfs
@@ -29,8 +44,6 @@
     {{ zfs_raidz2_disks | join(' ') }}
   when: zpool_check.rc != 0
 
-# ... (pool creation tasks remain the same) ...
-
 - name: Create ZFS Datasets with Tailored Options
   community.general.zfs:
     name: "{{ nas_pool_name }}/{{ item.name }}"
@@ -39,4 +52,3 @@
       mountpoint: "{{ nas_mount_point_base }}/{{ item.name }}"
       recordsize: "{{ item.recordsize | default('128k') }}"
   loop: "{{ nas_datasets }}"
-

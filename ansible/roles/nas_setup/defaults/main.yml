@@ -18,19 +18,29 @@ zfs_raidz2_disks:
   - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_Y6SGCKJFT
   - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_865XTG96T
 
-# Grouping datasets with their optimized properties
+# Grouping datasets with their optimized properties 
+# Note: minio and seafile are marked as local_only: true so NFS skips them
 nas_datasets:
   - name: "seafile"
     recordsize: "128k"
+    local_only: true
   - name: "photoprism"
     recordsize: "128k"
   - name: "minio"
     recordsize: "128k"
-  - name: "backups"
+    local_only: true
+  - name: "pbs-backups"
+    recordsize: "1m"
+  - name: "k3s-backups"
     recordsize: "1m"
   - name: "jellyfin"
     recordsize: "1m"
-  - name: "jellyfin/dvds"   # Parent 'jellyfin' must exist before this executes
+  - name: "jellyfin/dvds"
     recordsize: "1m"
-  - name: "jellyfin/music"  # Parent 'jellyfin' must exist before this executes
+  - name: "jellyfin/music"
     recordsize: "256k"
+
+# MinIO Configuration
+minio_version: "RELEASE.2026-07-03T16-39-21Z"
+minio_user: "minio"
+minio_group: "minio"
