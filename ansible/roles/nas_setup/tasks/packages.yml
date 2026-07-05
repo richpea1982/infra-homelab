@@ -1,10 +1,22 @@
 ---
+
+- name: Ensure Debian contrib repository is enabled
+  apt_repository:
+    repo: "deb http://deb.debian.org/debian/ {{ ansible_distribution_release }} main contrib"
+    state: present
+  # This dynamically grabs your Debian release name (e.g., bookworm, trixie) 
+  # and ensures 'contrib' is attached to the main mirror.
+
 - name: Run apt update and upgrade
   apt:
     update_cache: yes
     upgrade: dist
     cache_valid_time: 3600
 
+- name: Install SMB, NFS, and ZFS utilities
+  apt:
+    name: "{{ nas_packages }}"
+    state: present
 - name: Install SMB, NFS, and ZFS utilities
   apt:
     name: "{{ nas_packages }}"
