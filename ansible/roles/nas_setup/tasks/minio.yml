@@ -30,15 +30,16 @@
 
 - name: Deploy MinIO environment configuration
   no_log: true
-  content: |
-    MINIO_VOLUMES="{{ nas_mount_point_base }}/minio"
-    MINIO_OPTS="--address :9000 --console-address :9001"
-    MINIO_ROOT_USER="{{ vault_minio_root_user }}"
-    MINIO_ROOT_PASSWORD="{{ vault_minio_root_password }}"
-  dest: /etc/minio/minio.env
-  owner: root
-  group: "{{ minio_group }}"
-  mode: '0640'
+  copy: 
+    dest: /etc/minio/minio.env
+    content: |
+      MINIO_VOLUMES="{{ nas_mount_point_base }}/minio"
+      MINIO_OPTS="--address :9000 --console-address :9001"
+      MINIO_ROOT_USER="{{ vault_minio_root_user }}"
+      MINIO_ROOT_PASSWORD="{{ vault_minio_root_password }}"
+    owner: root
+    group: "{{ minio_group }}"
+    mode: '0640'
   register: minio_env_updated
 
 - name: Fix ownership of ZFS MinIO data directory
