@@ -1,15 +1,11 @@
 ---
 # Packages to install
-- name: Install SMB, NFS, and ZFS utilities plus S3 python dependencies
-  apt:
-    name:
-      - samba
-      - samba-common-bin
-      - nfs-kernel-server
-      - zfsutils-linux
-      - python3-boto3  # <--- Add this right here
-    state: present
-
+nas_packages:
+  - samba
+  - samba-common-bin
+  - nfs-kernel-server
+  - zfsutils-linux
+  - python3-boto3
 # ZFS Configuration
 nas_pool_name: "storage_pool"
 nas_mount_point_base: "/mnt/storage"
