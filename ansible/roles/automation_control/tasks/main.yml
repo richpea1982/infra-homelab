@@ -47,9 +47,9 @@
   when: pipx_path_check.rc != 0
 
 - name: Install Ansible core and community collections via pipx
-  command: pipx install --global ansible
+  command: pipx install --global --include-deps ansible
   args:
-    creates: /usr/local/bin/ansible
+    creates: /usr/local/bin/ansible-playbook
 
 # --- Install Ansible-Semaphore (Official GitHub Package Method) ---
 - name: Fetch latest Semaphore release metadata

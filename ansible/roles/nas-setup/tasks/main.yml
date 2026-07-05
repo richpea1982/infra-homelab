@@ -1,0 +1,6 @@
+---
+- name: Update system and install NAS packages
+  include_tasks: packages.yml
+
+- name: Configure ZFS Storage
+  include_tasks: zfs.yml

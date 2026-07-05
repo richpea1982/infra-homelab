@@ -1,0 +1,37 @@
+---
+- name: Ensure parent mount directory exists
+  file:
+    path: "{{ nas_mount_point_base }}"
+    state: directory
+    mode: '0755'
+
+- name: Check if ZFS pool already exists
+  command: "zpool list {{ nas_pool_name }}"
+  register: zpool_check
+  failed_when: false
+  changed_when: false
+
+- name: Create RAID-Z2 ZPOOL with optimized NAS options
+  command: >
+    zpool create -f
+    -o ashift=12
+    -O compression=lz4
+    -O xattr=sa
+    -O acltype=posixacl
+    -O atime=off
+    -O mountpoint=none
+    {{ nas_pool_name }} raidz2
+    {{ zfs_raidz2_disks | join(' ') }}
+  when: zpool_check.rc != 0
+
+# ... (pool creation tasks remain the same) ...
+
+- name: Create ZFS Datasets with Tailored Options
+  community.general.zfs:
+    name: "{{ nas_pool_name }}/{{ item.name }}"
+    state: present
+    extra_zfs_properties:
+      mountpoint: "{{ nas_mount_point_base }}/{{ item.name }}"
+      recordsize: "{{ item.recordsize | default('128k') }}"
+  loop: "{{ nas_datasets }}"
+

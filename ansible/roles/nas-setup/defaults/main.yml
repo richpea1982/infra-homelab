@@ -1,0 +1,47 @@
+---
+nas_pool_name: "storage_pool"
+nas_mount_point_base: "/mnt/storage"
+
+# Grouping datasets with their optimized properties
+nas_datasets:
+  - name: "seafile"
+    recordsize: "128k"
+  - name: "photoprism"
+    recordsize: "128k"
+  - name: "minio"
+    recordsize: "128k"
+  - name: "backups"
+    recordsize: "1m"
+  - name: "jellyfin"
+    recordsize: "1m"
+  - name: "jellyfin/dvds"
+    recordsize: "1m"
+  - name: "jellyfin/music"
+    recordsize: "256k"  # Music files are smaller than movies---
+
+# Packages to install
+nas_packages:
+  - samba
+  - samba-common-bin
+  - nfs-kernel-server
+  - zfsutils-linux
+
+# ZFS Configuration
+nas_pool_name: "storage_pool"
+nas_mount_point_base: "/mnt/storage"
+
+zfs_raidz2_disks:
+  - /dev/disk/by-id/ata-WDC_WD10JPVX-75JC3T0_WXK1E63ZHKV7
+  - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_37JOPUHTT
+  - /dev/disk/by-id/ata-ST1000LM024_HN-M101MBB_S32XJ9GGC10989
+  - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_Y4MLP8TYT
+  - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_Y6SGCKJFT
+  - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_865XTG96T
+
+# Datasets
+nas_datasets:
+  - "seafile"
+  - "photoprism"
+  - "jellyfin"
+  - "backups"
+  - "minio"

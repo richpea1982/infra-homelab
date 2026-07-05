@@ -1,0 +1,8 @@
+---
+- name: Provision and Configure Home NAS Server
+  hosts: nas_servers
+  become: true
+  gather_facts: true
+
+  roles:
+    - nas_setup

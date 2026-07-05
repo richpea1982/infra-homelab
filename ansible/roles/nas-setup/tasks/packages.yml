@@ -1,0 +1,11 @@
+---
+- name: Run apt update and upgrade
+  apt:
+    update_cache: yes
+    upgrade: dist
+    cache_valid_time: 3600
+
+- name: Install SMB, NFS, and ZFS utilities
+  apt:
+    name: "{{ nas_packages }}"
+    state: present
