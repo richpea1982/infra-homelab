@@ -1,24 +1,4 @@
 ---
-nas_pool_name: "storage_pool"
-nas_mount_point_base: "/mnt/storage"
-
-# Grouping datasets with their optimized properties
-nas_datasets:
-  - name: "seafile"
-    recordsize: "128k"
-  - name: "photoprism"
-    recordsize: "128k"
-  - name: "minio"
-    recordsize: "128k"
-  - name: "backups"
-    recordsize: "1m"
-  - name: "jellyfin"
-    recordsize: "1m"
-  - name: "jellyfin/dvds"
-    recordsize: "1m"
-  - name: "jellyfin/music"
-    recordsize: "256k"  # Music files are smaller than movies---
-
 # Packages to install
 nas_packages:
   - samba
@@ -38,10 +18,19 @@ zfs_raidz2_disks:
   - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_Y6SGCKJFT
   - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_865XTG96T
 
-# Datasets
+# Grouping datasets with their optimized properties
 nas_datasets:
-  - "seafile"
-  - "photoprism"
-  - "jellyfin"
-  - "backups"
-  - "minio"
+  - name: "seafile"
+    recordsize: "128k"
+  - name: "photoprism"
+    recordsize: "128k"
+  - name: "minio"
+    recordsize: "128k"
+  - name: "backups"
+    recordsize: "1m"
+  - name: "jellyfin"
+    recordsize: "1m"
+  - name: "jellyfin/dvds"   # Parent 'jellyfin' must exist before this executes
+    recordsize: "1m"
+  - name: "jellyfin/music"  # Parent 'jellyfin' must exist before this executes
+    recordsize: "256k"
