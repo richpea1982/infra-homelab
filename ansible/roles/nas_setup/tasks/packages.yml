@@ -2,21 +2,25 @@
 - name: Ensure contrib component is added to Debian sources
   replace:
     path: /etc/apt/sources.list
-    regexp: '(deb http:\/\/deb\.debian\.org\/debian\/ {{ ansible_distribution_release }} main)(?! contrib)'
+    regexp: '(deb http:\/\/deb\.debian\.org\/debian\/ {{ ansible_facts["distribution_release"] }} main)(?! contrib)'
     replace: '\1 contrib'
+  become: true  # <--- Force it right here explicitly
   register: apt_sources_updated
 
 - name: Run apt update if sources changed
   apt:
     update_cache: yes
+  become: true
   when: apt_sources_updated.changed
 
 - name: Run apt upgrade
   apt:
     upgrade: dist
     cache_valid_time: 3600
+  become: true
 
 - name: Install SMB, NFS, and ZFS utilities
   apt:
     name: "{{ nas_packages }}"
     state: present
+  become: true
