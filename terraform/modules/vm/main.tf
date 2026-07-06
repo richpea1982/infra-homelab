@@ -1,10 +1,21 @@
-resource "proxmox_virtual_environment_download_file" "debian_cloud" {
-  content_type = "iso"
+resource "proxmox_virtual_environment_file" "vendor_data" {
+  content_type = "snippets"
   datastore_id = "local"
   node_name    = var.node_name
-  url          = var.image_url
-  file_name    = "debian-13-genericcloud-amd64.img"
-  # checksum / checksum_algorithm recommended — pull SHA512SUMS from the same Debian dir
+
+  source_raw {
+    data = <<-EOF
+    #cloud-config
+    package_update: true
+    packages:
+      - qemu-guest-agent
+    runcmd:
+      - systemctl start qemu-guest-agent
+      - systemctl enable qemu-guest-agent
+    EOF
+    
+    file_name = "vendor-data-${var.hostname}.yaml"
+  }
 }
 
 resource "proxmox_virtual_environment_vm" "this" {
