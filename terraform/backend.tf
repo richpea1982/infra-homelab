@@ -3,7 +3,7 @@ terraform {
     bucket   = "terraform-state"
     key      = "homelab/terraform.tfstate"
     endpoints = {
-      s3 = "http://<nas-ip>:9000"   # MinIO on the NAS
+      s3 = "http://10.0.10.15:9000"   # MinIO on the NAS
     }
     use_path_style              = true
     skip_credentials_validation = true
