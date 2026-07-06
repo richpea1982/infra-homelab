@@ -1,0 +1,45 @@
+Network		10.0.0.0/24
+opnsnse		10.0.0.1
+switch		10.0.0.2
+
+Managment
+vlan10		10.0.10.0/24
+gateway		10.0.10.1
+pve1		10.0.10.11
+pve2		10.0.10.12
+pve3		10.0.10.13
+pve4		10.0.10.14
+nas		10.0.10.15
+pbs		10.0.10.16
+
+k3s1		10.0.10.21
+k3s2		10.0.10.22
+k3s3		10.0.10.23
+
+Internal lan
+vlan20		10.0.20.0/24
+gateway		10.0.20.1
+Traefik		10.0.20.11
+gafana		10.0.20.20
+prometheus	10.0.20.21
+linuxpc		dhcp
+
+external private
+vlan30		10.0.30.0/24
+gateway		10.0.30.1
+jellyfin	10.0.30.11
+photoprism	10.0.30.12
+bentopdf	10.0.30.13
+
+internet exposed
+vlan40		10.0.40.0/24
+gateway		10.0.40.1
+petitsanglais	10.0.40.11
+hantaweb	10.0.40.12
+richweb		10.0.40.13
+seafile		10.0.40.21
+
+untrusted
+vlan50		10.0.50.0/24
+gateway		10.0.50.1
+win11pc		dhcp
