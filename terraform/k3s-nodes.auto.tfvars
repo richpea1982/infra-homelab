@@ -1,8 +1,8 @@
 k3s_nodes = {
   pve2 = {
     node_name = "k3s-1",
-    vmid = 1061,
-    ip = "10.0.10.61/24",
+    vmid = 1021,
+    ip = "10.0.10.21/24",
     gateway = "10.0.10.1",
     cores = 4, memory = 6144,
     disk_size = 40,
@@ -10,8 +10,8 @@ k3s_nodes = {
   }
   pve3 = {
     node_name = "k3s-2",
-    vmid = 1062,
-    ip = "10.0.10.62/24",
+    vmid = 1022,
+    ip = "10.0.10.22/24",
     gateway = "10.0.10.1",
     cores = 4, memory = 6144,
     disk_size = 40,
@@ -19,8 +19,8 @@ k3s_nodes = {
   }
   pve4 = {
     node_name = "k3s-3",
-    vmid = 1063,
-    ip = "10.0.10.63/24",
+    vmid = 1023,
+    ip = "10.0.10.23/24",
     gateway = "10.0.10.1",
     cores = 2, memory = 5120,
     disk_size = 40,
