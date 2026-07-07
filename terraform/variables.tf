@@ -1,4 +1,3 @@
-}
 variable "proxmox_ssh_private_key" {
   type      = string
   sensitive = true
