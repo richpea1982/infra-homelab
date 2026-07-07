@@ -2,6 +2,7 @@ terraform {
   backend "s3" {
     bucket   = "homelab-tf-state"
     key      = "homelab/terraform.tfstate"
+    AWS_REGION = "main"
     endpoints = {
       s3 = "http://10.0.10.31:9000"   # MinIO on the NAS
     }
