@@ -1,3 +1,12 @@
+# 1. This resource handles downloading the Debian 13 Cloud Image to Proxmox
+resource "proxmox_virtual_environment_download_file" "debian_cloud" {
+  content_type = "iso"
+  datastore_id = "local"
+  node_name    = var.node_name
+  url          = var.image_url
+}
+
+# 2. This resource generates the Cloud-Init script text on the fly
 resource "proxmox_virtual_environment_file" "vendor_data" {
   content_type = "snippets"
   datastore_id = "local"
@@ -18,6 +27,7 @@ resource "proxmox_virtual_environment_file" "vendor_data" {
   }
 }
 
+# 3. This resource provisions the VM and ties everything together
 resource "proxmox_virtual_environment_vm" "this" {
   name      = var.hostname
   node_name = var.node_name
@@ -46,7 +56,7 @@ resource "proxmox_virtual_environment_vm" "this" {
     enabled = true
   }
 
-initialization {
+  initialization {
     ip_config {
       ipv4 {
         address = var.ip
@@ -56,8 +66,7 @@ initialization {
     
     user_account {
       username = "ansible"
-      # FIX: Pass the raw string variable instead of using the file() function
-      keys     = [var.ssh_public_key_string] 
+      keys     = [var.ssh_public_key] 
     }
 
     # Attach the cloud-init snippet to install the guest agent
