@@ -7,7 +7,7 @@ wordpress_sites = {
     cores     = 2
     memory    = 2048
     disk_size = 40
-    datastore = "local-lvm"
+    datastore = "ceph-storage"
   }
   petitsanglais = {
     node_name = "pve4"
@@ -17,6 +17,6 @@ wordpress_sites = {
     cores     = 2
     memory    = 2048
     disk_size = 20
-    datastore = "local-lvm"
+    datastore = "ceph-storage"
   }
 }

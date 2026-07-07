@@ -3,5 +3,8 @@ output "k3s_node_ips" {
 }
 
 output "wordpress_site_ips" {
-  value = { for k, v in module.wordpress_site : k => v.ip_address }
+  value = {
+    hantaweb      = module.wordpress_hantaweb.ip_address
+    petitsanglais = module.wordpress_petitsanglais.ip_address
+  }
 }
