@@ -1,3 +1,4 @@
+}
 variable "proxmox_ssh_private_key" {
   type      = string
   sensitive = true
@@ -38,10 +39,9 @@ variable "wordpress_sites" {
     datastore = string
   }))
 }
+# terraform/variables.tf
 
 variable "ssh_public_key" {
-  type        = string
-  description = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID1D/ll0wCK3OkjnREp0DxGY23+ELAV5jv6pM3GZarkI root@automation-node"
-  # You can safely set a default here since public keys are not sensitive, 
-  # or pass it in via your .tfvars file.
+  type    = string
+  default = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID1D/ll0wCK3OkjnREp0DxGY23+ELAV5jv6pM3GZarkI root@automation-node"
 }
