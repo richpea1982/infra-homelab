@@ -35,7 +35,9 @@ variable "wordpress_sites" {
   }))
 }
 
-variable "ssh_public_key" {
-  type    = string
-  default = "~/.ssh/id_ed25519.pub"
+variable "ssh_public_key_string" {
+  type        = string
+  description = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID1D/ll0wCK3OkjnREp0DxGY23+ELAV5jv6pM3GZarkI root@automation-node"
+  # You can safely set a default here since public keys are not sensitive, 
+  # or pass it in via your .tfvars file.
 }

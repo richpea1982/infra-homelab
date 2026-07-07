@@ -46,18 +46,21 @@ resource "proxmox_virtual_environment_vm" "this" {
     enabled = true
   }
 
-  initialization {
+initialization {
     ip_config {
       ipv4 {
         address = var.ip
         gateway = var.gateway
       }
     }
+    
     user_account {
       username = "ansible"
-      keys     = [file(var.ssh_public_key)]
+      # FIX: Pass the raw string variable instead of using the file() function
+      keys     = [var.ssh_public_key_string] 
     }
-    # user_data_file_id should point at a cloud-init snippet installing
-    # + enabling qemu-guest-agent — base cloud image doesn't include it
+
+    # Attach the cloud-init snippet to install the guest agent
+    vendor_data_file_id = proxmox_virtual_environment_file.vendor_data.id
   }
 }
