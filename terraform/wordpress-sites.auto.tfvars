@@ -4,8 +4,8 @@ wordpress_sites = {
     vmid      = 4011
     ip        = "10.0.40.11/24"
     gateway   = "10.0.40.1"
-    cores     = 2
-    memory    = 2048
+    cores     = 3
+    memory    = 4096
     disk_size = 40
     datastore = "ceph-storage"
   }
@@ -14,8 +14,8 @@ wordpress_sites = {
     vmid      = 4012
     ip        = "10.0.40.12/24"
     gateway   = "10.0.40.1"
-    cores     = 2
-    memory    = 2048
+    cores     = 1
+    memory    = 1024
     disk_size = 20
     datastore = "ceph-storage"
   }
