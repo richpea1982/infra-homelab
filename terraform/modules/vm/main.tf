@@ -4,6 +4,7 @@ resource "proxmox_virtual_environment_download_file" "debian_cloud" {
   datastore_id = "local"
   node_name    = var.node_name
   url          = var.image_url
+  file_name    = "debian-13-genericcloud-amd64-20260623-2518.img"
 }
 
 # 2. This resource generates the Cloud-Init script text on the fly
