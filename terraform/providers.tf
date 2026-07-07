@@ -4,8 +4,9 @@ provider "proxmox" {
   insecure  = true
   # ADD THIS BLOCK:
   ssh {
-    agent    = true
-    username = "root"  # Fixes the empty user "" issue
+#    agent    = true
+    username = "root"
+    private_key = var.proxmox_ssh_private_key
   }
 }
 
