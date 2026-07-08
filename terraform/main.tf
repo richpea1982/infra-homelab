@@ -15,7 +15,7 @@ module "k3s_node" {
   memory         = each.value.memory
   disk_size      = each.value.disk_size
   datastore_id   = each.value.datastore
-  ssh_public_key = var.ssh_public_key
+  ssh_public_key = local.ssh_public_key
 }
 
 # ==============================================================================
@@ -31,11 +31,12 @@ module "wordpress_hantaweb" {
   vmid           = var.wordpress_sites["hantaweb"].vmid
   ip             = var.wordpress_sites["hantaweb"].ip
   gateway        = var.wordpress_sites["hantaweb"].gateway
+  vlan_id        = var.wordpress_sites["hantaweb"].vlan_id
   cores          = var.wordpress_sites["hantaweb"].cores
   memory         = var.wordpress_sites["hantaweb"].memory
   disk_size      = var.wordpress_sites["hantaweb"].disk_size
   datastore_id   = var.wordpress_sites["hantaweb"].datastore
-  ssh_public_key = var.ssh_public_key
+  ssh_public_key = local.ssh_public_key
 
   # Enforce Stage 1 completion
   depends_on = [module.k3s_node]
@@ -50,6 +51,7 @@ module "wordpress_petitsanglais" {
   vmid           = var.wordpress_sites["petitsanglais"].vmid
   ip             = var.wordpress_sites["petitsanglais"].ip
   gateway        = var.wordpress_sites["petitsanglais"].gateway
+  vlan_id        = var.wordpress_sites["petitsanglais"].vlan_id
   cores          = var.wordpress_sites["petitsanglais"].cores
   memory         = var.wordpress_sites["petitsanglais"].memory
   disk_size      = var.wordpress_sites["petitsanglais"].disk_size

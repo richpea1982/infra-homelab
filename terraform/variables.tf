@@ -32,6 +32,7 @@ variable "wordpress_sites" {
     vmid      = number
     ip        = string
     gateway   = string
+    vlan_id   = number
     cores     = number
     memory    = number
     disk_size = number
@@ -41,5 +42,5 @@ variable "wordpress_sites" {
 # ssh public key injection
 variable "ssh_public_key" {
   type    = string
-  default = file(pathexpand("~/.ssh/id_terraform.pub"))
+  default = null
 }
