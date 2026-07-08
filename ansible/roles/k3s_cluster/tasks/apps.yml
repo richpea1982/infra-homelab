@@ -25,10 +25,13 @@
     remote_src: yes
 
 # --- Deploy Calico ---
-- name: Add Calico official Chart project lines
-  kubernetes.core.helm_repository:
-    name: projectcalico
-    repo_url: "https://docs.projectcalico.org/charts"
+- name: Install Calico CRDs (required separately as of v3.32+)
+  kubernetes.core.helm:
+    name: calico-crds
+    chart_ref: projectcalico/crd.projectcalico.org.v1
+    chart_version: "{{ calico_helm_version }}"
+    release_namespace: tigera-operator
+    create_namespace: true
 
 - name: Deploy Calico CNI inside kube-system scope
   kubernetes.core.helm:
@@ -36,14 +39,12 @@
     chart_ref: projectcalico/tigera-operator
     chart_version: "{{ calico_helm_version }}"
     release_namespace: tigera-operator
-    create_namespace: true
     values:
       installation:
         calicoNetwork:
           ipPools:
             - cidr: "{{ k3s_cluster_cidr }}"
               encapsulation: VXLAN
-
 # --- Deploy Traefik v3 ---
 - name: Add Traefik Helm upstream data tracks
   kubernetes.core.helm_repository:
