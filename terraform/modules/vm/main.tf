@@ -56,7 +56,7 @@ resource "proxmox_virtual_environment_vm" "this" {
     datastore_id = var.datastore_id
     interface    = "ide2"
     file_format  = "raw"
-    type         = "cloudinit"
+    cloud_init   = true
   }
 
   network_device {
