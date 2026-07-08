@@ -5,7 +5,6 @@ resource "proxmox_virtual_environment_download_file" "debian_cloud" {
   node_name    = var.node_name
   url          = var.image_url
   
-  # CHANGE THIS: Use a unique name per VM to prevent host resource collisions
   file_name    = "debian-13-${var.hostname}.img" 
 }
 
@@ -44,11 +43,20 @@ resource "proxmox_virtual_environment_vm" "this" {
     dedicated = var.memory
   }
 
+  # OS Root Disk Layout (Only ONE copy needed)
   disk {
-    datastore_id = var.datastore_id   # local only — never Ceph, etcd fsync sensitivity
+    datastore_id = var.datastore_id   
     file_id      = proxmox_virtual_environment_download_file.debian_cloud.id
     interface    = "scsi0"
     size         = var.disk_size
+  }
+
+  # Cloud-Init Drive Layout (Tells Proxmox to mount the CD-ROM ISO for config)
+  disk {
+    datastore_id = var.datastore_id
+    interface    = "ide2"
+    file_format  = "raw"
+    type         = "cloudinit"
   }
 
   network_device {
