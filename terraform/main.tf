@@ -56,7 +56,7 @@ module "wordpress_petitsanglais" {
   memory         = var.wordpress_sites["petitsanglais"].memory
   disk_size      = var.wordpress_sites["petitsanglais"].disk_size
   datastore_id   = var.wordpress_sites["petitsanglais"].datastore
-  ssh_public_key = var.ssh_public_key
+  ssh_public_key = local.ssh_public_key
 
   # Enforce serial order within Stage 2 to protect Ceph IOPS
   depends_on = [module.wordpress_hantaweb]
