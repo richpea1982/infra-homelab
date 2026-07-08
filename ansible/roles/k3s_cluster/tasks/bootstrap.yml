@@ -22,9 +22,12 @@
     state: started
     enabled: true
 
+# ... keep the top installation tasks exactly as they are ...
+
 - name: Wait for API Server port to accept connections
   wait_for:
     host: "127.0.0.1"
     port: "{{ k3s_api_port }}"
     delay: 5
     timeout: 60
+  when: k3s_node_index | int == 1

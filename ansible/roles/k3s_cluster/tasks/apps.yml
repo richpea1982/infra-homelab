@@ -37,6 +37,12 @@
     chart_version: "{{ calico_helm_version }}"
     release_namespace: tigera-operator
     create_namespace: true
+    values:
+      installation:
+        calicoNetwork:
+          ipPools:
+            - cidr: "{{ k3s_cluster_cidr }}"
+              encapsulation: VXLAN
 
 # --- Deploy Traefik v3 ---
 - name: Add Traefik Helm upstream data tracks

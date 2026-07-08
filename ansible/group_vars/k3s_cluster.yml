@@ -1,9 +1,12 @@
 ---
-k3s_version: "v1.30.2+k3s1" # Target a stable v1.30 release
+k3s_version: "v1.30.2+k3s1"
 k3s_api_server: "10.0.10.21"
 k3s_api_port: 6443
 
+# Network Overlays
+k3s_cluster_cidr: "10.42.0.0/16"
+
 # Helm Chart Tracking Versions
 calico_helm_version: "3.28.0"
-traefik_helm_version: "30.0.2" # Official Chart version for Traefik v3
+traefik_helm_version: "30.0.2"
 crowdsec_helm_version: "0.9.3"

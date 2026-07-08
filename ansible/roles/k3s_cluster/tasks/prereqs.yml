@@ -1,20 +1,21 @@
 ---
 - name: Ensure legacy iptables alternative mappings are active
   community.general.alternatives:
-    name: iptables
-    path: /usr/sbin/iptables-legacy
+    name: "{{ item }}"
+    path: "/usr/sbin/{{ item }}-legacy"
   loop:
     - iptables
     - ip6tables
     - arptables
     - ebtables
-  loop_control:
-    loop_var: item
 
-- name: Verify systemd-resolved DNS loop protections
-  stat:
-    path: /etc/resolv.conf
-  register: resolv_conf_stat
+- name: Ensure /etc/rancher/k3s directory exists
+  file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
 
 - name: Ensure standard upstream nameserver fallback is declared
   copy:
@@ -25,13 +26,13 @@
     mode: '0644'
     owner: root
     group: root
-  # Ensure the target folder paths exist before executing
-  before:
-    file:
-      path: /etc/rancher/k3s
-      state: directory
-      mode: '0755'
 
-- name: Turn off swap space completely for kubelet stability
+- name: Turn off swap space completely for current session
   command: swapoff -a
   changed_when: false
+
+- name: Disable swap in fstab persistently across reboots
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\sswap\s.*)$'
+    replace: '#\1'
