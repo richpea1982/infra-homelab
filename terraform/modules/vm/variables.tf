@@ -13,3 +13,7 @@ variable "image_url" {
   type    = string
   default = "https://cloud.debian.org/images/cloud/trixie/20260623-2518/debian-13-genericcloud-amd64-20260623-2518.qcow2"
 }
+variable "vlan_id" {
+  type    = number
+  default = null
+}

@@ -38,9 +38,8 @@ variable "wordpress_sites" {
     datastore = string
   }))
 }
-# terraform/variables.tf
-
+# ssh public key injection
 variable "ssh_public_key" {
   type    = string
-  default = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID1D/ll0wCK3OkjnREp0DxGY23+ELAV5jv6pM3GZarkI root@automation-node"
+  default = file(pathexpand("~/.ssh/id_terraform.pub"))
 }
