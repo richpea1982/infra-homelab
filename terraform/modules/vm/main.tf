@@ -43,20 +43,12 @@ resource "proxmox_virtual_environment_vm" "this" {
     dedicated = var.memory
   }
 
-  # OS Root Disk Layout (Only ONE copy needed)
+# ONLY ONE disk block: Just your main Debian OS drive!
   disk {
     datastore_id = var.datastore_id   
     file_id      = proxmox_virtual_environment_download_file.debian_cloud.id
     interface    = "scsi0"
     size         = var.disk_size
-  }
-
-  # Cloud-Init Drive Layout (Tells Proxmox to mount the CD-ROM ISO for config)
-  disk {
-    datastore_id = var.datastore_id
-    interface    = "ide2"
-    file_format  = "raw"
-    cloud_init   = true
   }
 
   network_device {
@@ -67,7 +59,11 @@ resource "proxmox_virtual_environment_vm" "this" {
     enabled = true
   }
 
+  # THIS block manages the Cloud-Init hardware + provisioning automatically
   initialization {
+    datastore_id = var.datastore_id  # <--- Tells Proxmox where to generate the cloudinit drive
+    interface    = "ide2"            # <--- Attaches it to the traditional IDE CD-ROM slot
+
     ip_config {
       ipv4 {
         address = var.ip
