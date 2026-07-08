@@ -1,0 +1,10 @@
+---
+- name: Orchestrate HA K3s Cluster Provisioning
+  hosts: k3s_cluster
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/vault.yml
+
+  roles:
+    - role: ../roles/k3s_cluster

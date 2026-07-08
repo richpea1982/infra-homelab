@@ -1,0 +1,77 @@
+---
+- name: Create local execution bin paths for Helm management
+  file:
+    path: /root/.kube
+    state: directory
+    mode: '0700'
+
+- name: Create symbolic link to cluster credentials for default actions
+  file:
+    src: "{{ k3s_kubeconfig_path }}"
+    dest: /root/.kube/config
+    state: link
+
+- name: Install helm components on control host
+  unarchive:
+    src: "https://get.helm.sh/helm-v3.14.0-linux-amd64.tar.gz"
+    dest: /tmp
+    remote_src: yes
+
+- name: Move helm binary into global pathing execution spots
+  copy:
+    src: /tmp/linux-amd64/helm
+    dest: /usr/local/bin/helm
+    mode: '0755'
+    remote_src: yes
+
+# --- Deploy Calico ---
+- name: Add Calico official Chart project lines
+  kubernetes.core.helm_repository:
+    name: projectcalico
+    repo_url: "https://docs.projectcalico.org/charts"
+
+- name: Deploy Calico CNI inside kube-system scope
+  kubernetes.core.helm:
+    name: calico
+    chart_ref: projectcalico/tigera-operator
+    chart_version: "{{ calico_helm_version }}"
+    release_namespace: tigera-operator
+    create_namespace: true
+
+# --- Deploy Traefik v3 ---
+- name: Add Traefik Helm upstream data tracks
+  kubernetes.core.helm_repository:
+    name: traefik
+    repo_url: "https://traefik.github.io/charts"
+
+- name: Install Traefik v3 Proxy Ingress Gateway Engine
+  kubernetes.core.helm:
+    name: traefik
+    chart_ref: traefik/traefik
+    chart_version: "{{ traefik_helm_version }}"
+    release_namespace: kube-system
+    values:
+      providers:
+        kubernetesCRD:
+          enabled: true
+        kubernetesIngress:
+          enabled: true
+
+# --- Deploy CrowdSec Integration ---
+- name: Add CrowdSec repository endpoint
+  kubernetes.core.helm_repository:
+    name: crowdsec
+    repo_url: "https://crowdsecurity.github.io/helm-charts"
+
+- name: Install CrowdSec Security Engine Suite
+  kubernetes.core.helm:
+    name: crowdsec
+    chart_ref: crowdsec/crowdsec
+    chart_version: "{{ crowdsec_helm_version }}"
+    release_namespace: kube-system
+    values:
+      agent:
+        acquisition:
+          - namespace: kube-system
+            podName: traefik-*
+            program: traefik

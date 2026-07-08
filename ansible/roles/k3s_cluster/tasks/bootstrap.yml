@@ -1,0 +1,30 @@
+---
+- name: Check if K3s is already initialized on Node 1
+  stat:
+    path: /usr/local/bin/k3s
+  register: k3s_bin
+
+- name: Download and execute primary node installation sequence
+  shell: >
+    curl -sfL https://get.k3s.io | 
+    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server 
+    --flannel-backend=none 
+    --disable traefik 
+    --cluster-init 
+    --token "{{ vault_k3s_cluster_token }}"
+  environment:
+    INSTALL_K3S_EXEC: "server"
+  when: not k3s_bin.stat.exists
+
+- name: Ensure server service is safely up and structural paths exist
+  systemd:
+    name: k3s
+    state: started
+    enabled: true
+
+- name: Wait for API Server port to accept connections
+  wait_for:
+    host: "127.0.0.1"
+    port: "{{ k3s_api_port }}"
+    delay: 5
+    timeout: 60
