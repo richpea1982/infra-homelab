@@ -1,8 +1,9 @@
 ---
-- name: Check if K3s agent/server is already initialized on worker
-  stat:
-    path: /usr/local/bin/k3s
-  register: k3s_agent_bin
+- name: Check if K3s agent/server is already running on worker
+  systemd:
+    name: k3s
+  register: k3s_agent_status
+  failed_when: false
 
 - name: Joint Cluster Sequence for Peer Control Plane Nodes
   shell: >
@@ -12,7 +13,9 @@
     --token "{{ vault_k3s_cluster_token }}"
     --flannel-backend=none 
     --disable traefik
-  when: not k3s_agent_bin.stat.exists
+  when: >
+    k3s_agent_status.status is not defined or
+    k3s_agent_status.status.ActiveState != "active"
 
 - name: Ensure secondary k3s service engines are verified running
   systemd:
