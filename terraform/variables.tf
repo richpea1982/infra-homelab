@@ -1,5 +1,6 @@
 variable "proxmox_ssh_private_key" {
   type      = string
+  description = "base64decode(var.ssh_private_key_base64)"
   sensitive = true
 }
 variable "proxmox_endpoint" {
@@ -44,4 +45,9 @@ variable "wordpress_sites" {
 variable "ssh_public_key" {
   type    = string
   default = null
+}
+variable "ssh_private_key_base64" {
+  type        = string
+  description = "Base64 encoded private SSH key passed from Semaphore secrets"
+  sensitive   = true
 }
