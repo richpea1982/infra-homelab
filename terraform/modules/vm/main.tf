@@ -35,6 +35,8 @@ resource "proxmox_virtual_environment_vm" "this" {
   node_name = var.node_name
   vm_id     = var.vmid
 
+  reboot_after_update = true
+
   cpu {
     cores = var.cores
   }

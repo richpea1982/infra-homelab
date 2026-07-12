@@ -1,8 +1,3 @@
-variable "proxmox_ssh_private_key" {
-  type      = string
-  description = "base64decode(var.ssh_private_key_base64)"
-  sensitive = true
-}
 variable "proxmox_endpoint" {
   type = string
 }
