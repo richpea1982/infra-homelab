@@ -176,4 +176,4 @@
       stringData:
         type: git
         url: "{{ gitops_repo_url }}"
-        sshPrivateKey: "{{ lookup('file', '/etc/ansible-secrets/argocd_k3s_deploy') }}"
+        sshPrivateKey: "{{ argocd_priv_key['content'] | b64decode }}"
