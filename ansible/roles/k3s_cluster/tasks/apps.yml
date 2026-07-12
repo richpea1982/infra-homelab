@@ -153,14 +153,10 @@
     comment: "argocd-k3s-gitops"
     mode: '0600'
 
-- name: Read the generated public key from the remote node
+- name: Read the generated private key from the remote node
   ansible.builtin.slurp:
-    src: /etc/ansible-secrets/argocd_k3s_deploy.pub
-  register: argocd_pub_key
-
-- name: Show the public key — add as a READ-ONLY deploy key on richpea1982/k3s (one-time manual step)
-  ansible.builtin.debug:
-    msg: "{{ argocd_pub_key['content'] | b64decode }}"
+    src: /etc/ansible-secrets/argocd_k3s_deploy
+  register: argocd_priv_key
 
 - name: Register the K3s GitOps repo credentials with ArgoCD
   kubernetes.core.k8s:
