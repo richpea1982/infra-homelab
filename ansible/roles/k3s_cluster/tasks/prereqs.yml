@@ -4,27 +4,40 @@
     update_cache: yes
   when: ansible_facts['pkg_mgr'] == 'apt'
 
-- name: Install legacy/netfilter helper packages (Debian/Ubuntu)
+- name: Install arptables and ebtables packages if available (Debian/Ubuntu)
   apt:
     name:
-      - iptables
-      - iptables-legacy
-      - iproute2
       - arptables
       - ebtables
+      - iptables
+      - iproute2
     state: present
   when: ansible_facts['pkg_mgr'] == 'apt'
 
-
-- name: Ensure legacy iptables alternative mappings are active
-  community.general.alternatives:
-    name: "{{ item }}"
+- name: Check for legacy binary for each tool
+  stat:
     path: "/usr/sbin/{{ item }}-legacy"
+  register: legacy_stat
   loop:
     - iptables
     - ip6tables
     - arptables
     - ebtables
+  loop_control:
+    label: "{{ item }}"
+
+- name: Set alternatives for tools that have a legacy binary present
+  community.general.alternatives:
+    name: "{{ item.item }}"
+    path: "/usr/sbin/{{ item.item }}-legacy"
+  loop: "{{ legacy_stat.results }}"
+  when: item.stat.exists
+
+- name: Warn when a legacy binary is missing (informational)
+  debug:
+    msg: "Legacy binary /usr/sbin/{{ item.item }}-legacy not found; skipping alternatives for {{ item.item }}"
+  loop: "{{ legacy_stat.results }}"
+  when: not item.stat.exists
 
 - name: Ensure /etc/rancher/k3s directory exists
   file:
