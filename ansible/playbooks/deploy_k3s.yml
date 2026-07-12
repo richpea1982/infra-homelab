@@ -1,4 +1,21 @@
 ---
+- name: Refresh SSH host keys for K3s nodes (Terraform-rebuilt VMs get fresh keys on every rebuild)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Remove any stale known_hosts entries for K3s cluster IPs
+      ansible.builtin.known_hosts:
+        name: "{{ hostvars[item].ansible_host }}"
+        state: absent
+      loop: "{{ groups['k3s_cluster'] }}"
+
+    - name: Scan and trust the current SSH host key for each K3s node
+      ansible.builtin.shell: |
+        ssh-keyscan -H {{ hostvars[item].ansible_host }} >> ~/.ssh/known_hosts
+      loop: "{{ groups['k3s_cluster'] }}"
+      changed_when: true
+
 - name: Orchestrate HA K3s Cluster Provisioning
   hosts: k3s_cluster
   become: true
@@ -8,3 +25,10 @@
 
   roles:
     - role: ../roles/k3s_cluster
+- name: Orchestrate HA K3s Cluster Provisioning
+  hosts: k3s_cluster
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/vault.yml
+
