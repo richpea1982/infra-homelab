@@ -18,6 +18,7 @@ variable "k3s_nodes" {
     vmid      = number
     ip        = string   # CIDR, e.g. 10.0.10.20/24
     gateway   = string
+    vlan_id   = number
     cores     = number
     memory    = number
     disk_size = number
