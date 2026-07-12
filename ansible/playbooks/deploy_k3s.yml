@@ -5,15 +5,11 @@
   gather_facts: false
   tasks:
     - name: Remove stale known_hosts entries for both names and IPs
-      ansible.builtin.command: "ssh-keygen -f '/root/.ssh/known_hosts' -R '{{ item }}'"
-      errors_to_ignore: true # Prevents failing if the key isn't there yet
-      loop:
-        - "k3s-pve2"
-        - "10.0.10.21"
-        - "k3s-pve3"
-        - "10.0.10.22"
-        - "k3s-pve4"
-        - "10.0.10.23"
+      ansible.builtin.command: >
+         ssh-keygen -f /root/.ssh/known_hosts -R {{ item }}
+      loop: "{{ groups['k3s_cluster'] + [hostvars[groups['k3s_cluster'][0]].ansible_host, hostvars[groups['k3s_cluster'][1]].ansible_host, hostvars[groups['k3s_cluster'][2]].ansible_host] }}"
+      ignore_errors: true
+      changed_when: true
 
     - name: Scan and trust the current SSH host key for each K3s node IP
       ansible.builtin.shell: "ssh-keyscan -H {{ item }} >> /root/.ssh/known_hosts"
