@@ -33,7 +33,7 @@
   pip:
     name: kubernetes
     state: present
-    extra_args: "--break-system-packages"
+    extra_args: "--break-system-packages --ignore-installed"
 
 # --- Deploy Calico (CNI) ---
 # Genuine prerequisite, not a caution: no pod — including ArgoCD's own —
