@@ -1,4 +1,21 @@
 ---
+- name: Ensure apt cache is up to date (Debian/Ubuntu)
+  apt:
+    update_cache: yes
+  when: ansible_facts['pkg_mgr'] == 'apt'
+
+- name: Install legacy/netfilter helper packages (Debian/Ubuntu)
+  apt:
+    name:
+      - iptables
+      - iptables-legacy
+      - iproute2
+      - arptables
+      - ebtables
+    state: present
+  when: ansible_facts['pkg_mgr'] == 'apt'
+
+
 - name: Ensure legacy iptables alternative mappings are active
   community.general.alternatives:
     name: "{{ item }}"
