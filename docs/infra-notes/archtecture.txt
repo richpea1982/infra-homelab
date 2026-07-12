@@ -1,0 +1,50 @@
+# Architectural Case Study: Resilient Hyperconverged Homelab Infrastructure
+
+## Executive Summary
+This project showcases the design, automation, and provisioning of a highly available, multi-layered enterprise homelab environment. The architecture balances high-performance media transcoding and photo storage alongside production-grade public web hosting. The entire infrastructure is deployed using a declarative Infrastructure-as-Code (IaC) pipeline via Terraform and orchestrated natively through Ansible.
+
+---
+
+## Technical Architecture & Resource Optimization
+
+### Hypervisor Tier (Proxmox VE Cluster)
+The infrastructure is distributed across a 3-node Proxmox VE hyperconverged cluster running a shared distributed Ceph storage pool. Physical memory and compute allocations are tuned precisely to mitigate host-level overhead while keeping workloads isolated based on risk profiles:
+
+* **pve2 (16GB RAM - High Performance Node):** Focuses on heavy, localized stateful computing. Hosts a 6GB K3s Cluster instance alongside standalone Linux Containers (LXCs) for Jellyfin (4GB) and Photoprism (4GB). Both LXCs utilize hardware acceleration via direct GPU pass-through.
+* **pve3 (16GB RAM) & pve4 (12GB RAM - High Availability Compute Pool):** Configured as the core failover zone for production Virtual Machines. 
+
+### Enterprise Workload Segmentation
+Workloads are distinctly separated by underlying virtualization technology based on their specific risk profiles and resource access requirements:
+
+1.  **Monolithic/Legacy High-Risk Production (Standalone QEMU VMs):**
+    The public-facing business web architectures (`hantaweb` running WordPress + WooCommerce and `petitsanglais`) are deployed as isolated Virtual Machines. Keeping them inside fully virtualized hardware containers ensures strict kernel separation from the rest of the cluster. These VMs utilize Proxmox HA coupled with shared Ceph storage to ensure automated stateful migration between `pve3` and `pve4` in the event of hardware failure.
+2.  **Shared-Kernel Elastic Computing (Linux Containers - LXCs):**
+    Jellyfin and Photoprism are deployed inside LXCs on `pve2`. Unlike VMs, LXCs share the host OS kernel directly, acting as an elastic memory pool. Unused RAM drops to zero when idle, feeding capacity back to the underlying hypervisor and Ceph metadata processors.
+3.  **Containerized Microservices Tier (Highly Available K3s Cluster):**
+    A 3-node hyperconverged K3s Kubernetes cluster runs with embedded Etcd multi-master replication across all hosts. This cluster manages stateless microservices, internal administrative platforms (BentoPDF, portfolio markdown site), and unified data synchronization layers (Seafile).
+
+---
+
+## Security, Networking, and Visibility Strategy
+
+### 1. Inbound Traffic & Zero-Trust Access
+The network utilizes a strict no-ingress firewall policy. Public applications are exposed securely using Cloudflare Tunnels (Argo Smart Routing), establishing an outbound-only connection to the Cloudflare edge. Internal management panels and administrative apps are entirely shielded from the internet, accessible via an overlay network utilizing a private WireGuard gateway anchored on an external cloud instance.
+
+### 2. Multi-Layered Defensive Architecture (Traefik + CrowdSec Bouncer)
+Because incoming traffic arrives over encrypted tunnels directly to the cluster nodes, traditional edge firewalls (OPNsense) cannot inspect the application-layer HTTP payloads. 
+
+To overcome this visibility constraint, a decentralized security model was designed:
+* **Ingress Layer:** The legacy bundled Traefik ingress controller inside K3s was disabled, replaced by a native deployment of the latest **Traefik v3** engine via Helm.
+* **Intrusion Detection:** **CrowdSec** is deployed inside the Kubernetes cluster, reading unencrypted access logs straight from Traefik.
+* **Active Remediation:** A CrowdSec Middleware Bouncer is attached directly to the Traefik routing configuration. This allows the cluster to parse `X-Forwarded-For` HTTP headers provided by Cloudflare, detect layer-7 malicious behavior (brute-forcing, path traversal, exploit scanning), and drop malicious traffic right at the cluster boundary.
+
+### 3. Core Networking Engine (Calico CNI)
+The default Flannel CNI was replaced with **Calico** to gain an enterprise-grade Network Policy engine. This enables fine-grained network isolation rules (micro-segmentation) directly inside the cluster pool, blocking public-facing web pods from communicating with sensitive internal databases or management nodes. Calico was deliberately selected over eBPF-based alternatives (like Cilium) to conserve vital system RAM on resource-constrained worker nodes while maintaining complete layer-3 packet enforcement.
+
+---
+
+## Core Engineering Skills Demonstrated
+* **Infrastructure-as-Code:** Declarative deployment via Terraform utilizing the `bpg/proxmox` provider.
+* **Configuration Management:** Full OS provisioning, cluster lifecycle management, and package configuration using automated Ansible playbooks.
+* **Cloud-Native Orchestration:** Advanced Helm application packaging, custom Kubernetes ingress middleware design, and microservice networking.
+* **Security Engineering:** Zero-trust architecture, Layer-7 intrusion prevention systems, and internal network micro-segmentation.

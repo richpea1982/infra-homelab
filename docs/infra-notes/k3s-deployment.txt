@@ -1,0 +1,44 @@
+================================================================================
+ANSIBLE INFRASTRUCTURE SPECIFICATION: K3S CLUSTER WITH CALICO & TRAEFIK V3
+================================================================================
+
+Target Environment:
+  - Control Plane Nodes: 3 Nodes (Hyperconverged Schedulable Master/Workers)
+  - Target Hosts: 
+      * k3s-pve2 (10.0.10.21) - 6GB RAM Allocated
+      * k3s-pve3 (10.0.10.22) - 6GB RAM Allocated
+      * k3s-pve4 (10.0.10.23) - 5GB RAM Allocated
+  - Deployment User: rich (Configured with passwordless sudo via Cloud-Init)
+
+Architectural Prerequisites (OS-Level via Ansible):
+  - Ensure standard iptables configuration (avoiding nftables backend conflicts)
+  - Verify systemd-resolved or standard DNS mappings to avoid internal resolve loops
+  - Ensure execution of steps is idempotent (e.g., handling cluster token creation)
+
+K3s Bootstrap Execution Sequence:
+  1. Initialize Cluster on Node 1 (pve2):
+     - Executed via script: curl -sfL https://get.k3s.io | sh -s - server
+     - Mandatory Flags:
+         --flannel-backend=none  # Disables default VXLAN networking for Calico
+         --disable traefik       # Disables legacy bundled Traefik v1/v2 HelmChart
+         --cluster-init          # Directs K3s to initialize embedded Etcd datastore
+  2. Register Nodes 2 & 3 (pve3, pve4):
+     - Executed via join script targeting Node 1's API server: https://10.0.10.21:6443
+     - Mandatory Flags:
+         --server https://10.0.10.21:6443
+         --token <SECURE_SHARED_TOKEN>
+         --flannel-backend=none
+         --disable traefik
+
+Kubernetes-Native Tooling Orchestrated via Ansible:
+  1. Calico CNI Deployment:
+     - Deployed via `kubernetes.core.helm` or targeted manifest application
+     - Utilizes standard Linux routing engine to implement fine-grained Network Policies 
+       without the heavy resource overhead of eBPF.
+  2. Traefik v3 Ingress Controller:
+     - Managed via the official, community-maintained Traefik v3 Helm chart
+     - Configured to run cleanly in the `kube-system` namespace with CRD providers active
+  3. CrowdSec Security Integration:
+     - Implemented as an in-cluster security instance linked directly to Traefik v3
+     - Uses custom Traefik Middlewares (CrowdSec Bouncers) to parse incoming requests 
+       at the HTTP termination barrier.

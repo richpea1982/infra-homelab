@@ -24,7 +24,25 @@
     mode: '0755'
     remote_src: yes
 
-# --- Deploy Calico ---
+- name: Ensure python3-pip is available for the Kubernetes Python client
+  apt:
+    name: python3-pip
+    state: present
+
+- name: Install Kubernetes Python client (required by k8s / k8s_info modules)
+  pip:
+    name: kubernetes
+    state: present
+    extra_args: "--break-system-packages"
+
+# --- Deploy Calico (CNI) ---
+# Genuine prerequisite, not a caution: no pod — including ArgoCD's own —
+# can be scheduled without pod networking existing first.
+- name: Add Calico (Tigera) Helm repository
+  kubernetes.core.helm_repository:
+    name: projectcalico
+    repo_url: "https://projectcalico.docs.tigera.io/charts"
+
 - name: Install Calico CRDs (required separately as of v3.32+)
   kubernetes.core.helm:
     name: calico-crds
@@ -45,40 +63,75 @@
           ipPools:
             - cidr: "{{ k3s_cluster_cidr }}"
               encapsulation: VXLAN
-# --- Deploy Traefik v3 ---
-- name: Add Traefik Helm upstream data tracks
+
+- name: Wait for Calico node pods to be Running before continuing
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: calico-system
+    label_selectors:
+      - "k8s-app=calico-node"
+  register: calico_pods
+  until: >
+    calico_pods.resources | length > 0 and
+    calico_pods.resources | map(attribute='status.phase') | unique == ['Running']
+  retries: 30
+  delay: 10
+
+# --- Deploy ArgoCD ---
+# This is the last thing Ansible installs directly. Everything after this
+# point is GitOps-managed — Ansible does not touch Traefik, CrowdSec, or
+# any future workload again.
+- name: Add ArgoCD Helm repository
   kubernetes.core.helm_repository:
-    name: traefik
-    repo_url: "https://traefik.github.io/charts"
+    name: argo
+    repo_url: "https://argoproj.github.io/argo-helm"
 
-- name: Install Traefik v3 Proxy Ingress Gateway Engine
+- name: Install ArgoCD
   kubernetes.core.helm:
-    name: traefik
-    chart_ref: traefik/traefik
-    chart_version: "{{ traefik_helm_version }}"
-    release_namespace: kube-system
-    values:
-      providers:
-        kubernetesCRD:
-          enabled: true
-        kubernetesIngress:
-          enabled: true
+    name: argocd
+    chart_ref: argo/argo-cd
+    chart_version: "{{ argocd_helm_version }}"
+    release_namespace: argocd
+    create_namespace: true
 
-# --- Deploy CrowdSec Integration ---
-- name: Add CrowdSec repository endpoint
-  kubernetes.core.helm_repository:
-    name: crowdsec
-    repo_url: "https://crowdsecurity.github.io/helm-charts"
+- name: Wait for the ArgoCD application controller to be Running
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: argocd
+    label_selectors:
+      - "app.kubernetes.io/name=argocd-application-controller"
+  register: argocd_pods
+  until: >
+    argocd_pods.resources | length > 0 and
+    argocd_pods.resources | map(attribute='status.phase') | unique == ['Running']
+  retries: 30
+  delay: 10
 
-- name: Install CrowdSec Security Engine Suite
-  kubernetes.core.helm:
-    name: crowdsec
-    chart_ref: crowdsec/crowdsec
-    chart_version: "{{ crowdsec_helm_version }}"
-    release_namespace: kube-system
-    values:
-      agent:
-        acquisition:
-          - namespace: kube-system
-            podName: traefik-*
-            program: traefik
+# --- Bootstrap the App-of-Apps root Application ---
+# From here on, ArgoCD reconciles everything under {{ gitops_repo_path }}
+# in {{ gitops_repo_url }} on its own. Adding a new service later means
+# committing a new file to that path — no further Ansible runs required.
+- name: Apply the ArgoCD root Application (app-of-apps)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: argoproj.io/v1alpha1
+      kind: Application
+      metadata:
+        name: root-app
+        namespace: argocd
+      spec:
+        project: default
+        source:
+          repoURL: "{{ gitops_repo_url }}"
+          targetRevision: "{{ gitops_repo_revision }}"
+          path: "{{ gitops_repo_path }}"
+        destination:
+          server: "https://kubernetes.default.svc"
+          namespace: argocd
+        syncPolicy:
+          automated:
+            prune: true
+            selfHeal: true
+          syncOptions:
+            - CreateNamespace=true
