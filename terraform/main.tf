@@ -11,6 +11,7 @@ module "k3s_node" {
   vmid           = each.value.vmid
   ip             = each.value.ip
   gateway        = each.value.gateway
+  vlan_id        = each.value.vlan_id
   cores          = each.value.cores
   memory         = each.value.memory
   disk_size      = each.value.disk_size
