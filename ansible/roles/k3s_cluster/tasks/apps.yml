@@ -135,3 +135,40 @@
             selfHeal: true
           syncOptions:
             - CreateNamespace=true
+# --- Generate and register ArgoCD's GitOps deploy key ---
+# Idempotent: openssh_keypair does not regenerate an existing key, so the
+# public key registered with GitHub stays valid across every subsequent run.
+- name: Ensure directory for ArgoCD's GitOps deploy key exists
+  file:
+    path: /etc/ansible-secrets
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: Generate the ArgoCD GitOps deploy key (skipped if it already exists)
+  community.crypto.openssh_keypair:
+    path: /etc/ansible-secrets/argocd_k3s_deploy
+    type: ed25519
+    comment: "argocd-k3s-gitops"
+    mode: '0600'
+
+- name: Show the public key — add as a READ-ONLY deploy key on richpea1982/k3s (one-time manual step)
+  debug:
+    msg: "{{ lookup('file', '/etc/ansible-secrets/argocd_k3s_deploy.pub') }}"
+
+- name: Register the K3s GitOps repo credentials with ArgoCD
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: k3s-gitops-repo
+        namespace: argocd
+        labels:
+          argocd.argoproj.io/secret-type: repository
+      stringData:
+        type: git
+        url: "{{ gitops_repo_url }}"
+        sshPrivateKey: "{{ lookup('file', '/etc/ansible-secrets/argocd_k3s_deploy') }}"
