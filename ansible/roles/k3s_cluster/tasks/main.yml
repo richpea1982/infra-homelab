@@ -13,3 +13,8 @@
 - name: Join Secondary Control Planes (Nodes 2 & 3)
   include_tasks: join.yml
   when: k3s_node_index | int > 1
+
+# ... (existing K3s installation tasks above) ...
+
+- name: Apply user convenience settings
+  ansible.builtin.include_tasks: user-comforts.yml

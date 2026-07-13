@@ -1,0 +1,27 @@
+---
+- name: Ensure .kube directory exists for user
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0700'
+
+- name: Copy K3s kubeconfig to user home directory
+  ansible.builtin.copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    remote_src: yes
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600'
+
+- name: Add helpful kubectl aliases to .bashrc
+  ansible.builtin.blockinfile:
+    path: "/home/{{ ansible_user }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED KUBERNETES ALIASES"
+    block: |
+      alias k='kubectl'
+      alias kgp='kubectl get pods'
+      alias kgn='kubectl get nodes'
+      alias kgs='kubectl get svc'
