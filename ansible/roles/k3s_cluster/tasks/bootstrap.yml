@@ -89,24 +89,11 @@
     delay: 5
     timeout: 60
 
-# --- Stand up kube-vip — only on a true fresh init. If this node rejoined an
-# existing cluster (Path A), kube-vip's DaemonSet is already running cluster-wide. ---
+# --- Stand up kube-vip — only on a true fresh init. If this node rejoined an existing cluster (Path A), kube-vip's DaemonSet is already running cluster-wide. ---
 - name: Apply kube-vip manifest (auto-applied by K3s's own controller on this node)
   ansible.builtin.copy:
     src: files/kube-vip.yaml
     dest: /var/lib/rancher/k3s/server/manifests/kube-vip.yaml
     owner: root
     mode: '0644'
-  when: cluster_init_result is not skipped
-
-- name: Wait for the VIP to become reachable before secondary nodes attempt to join
-  ansible.builtin.uri:
-    url: "https://{{ k3s_api_server }}:{{ k3s_api_port }}/readyz"
-    validate_certs: false
-    status_code: [200, 401, 403]
-    timeout: 5
-  register: vip_ready
-  retries: 30
-  delay: 10
-  until: (vip_ready.status | default(0)) in [200, 401, 403]
   when: cluster_init_result is not skipped
