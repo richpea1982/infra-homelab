@@ -62,3 +62,23 @@ module "wordpress_petitsanglais" {
   # Enforce serial order within Stage 2 to protect Ceph IOPS
   depends_on = [module.wordpress_hantaweb]
 }
+
+# Second Ceph VM: Explicitly waits for petitsanglais to completely finish first
+module "wordpress_hantaassos" {
+  source = "./modules/vm"
+
+  hostname       = "hanta-assos"
+  node_name      = var.wordpress_sites["hanta-assos"].node_name
+  vmid           = var.wordpress_sites["hanta-assos"].vmid
+  ip             = var.wordpress_sites["hanta-assos"].ip
+  gateway        = var.wordpress_sites["hanta-assos"].gateway
+  vlan_id        = var.wordpress_sites["hanta-assos"].vlan_id
+  cores          = var.wordpress_sites["hanta-assos"].cores
+  memory         = var.wordpress_sites["hanta-assos"].memory
+  disk_size      = var.wordpress_sites["hanta-assos"].disk_size
+  datastore_id   = var.wordpress_sites["hanta-assos"].datastore
+  ssh_public_key = local.ssh_public_key
+
+  # Enforce serial order within Stage 2 to protect Ceph IOPS
+  depends_on = [module.wordpress_petitsanglais]
+}
