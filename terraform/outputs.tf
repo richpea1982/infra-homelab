@@ -6,5 +6,6 @@ output "wordpress_site_ips" {
   value = {
     hantaweb      = module.wordpress_hantaweb.ip_address
     petitsanglais = module.wordpress_petitsanglais.ip_address
+    hantaassos = module.wordpress_hantaassos.ip_address
   }
 }
