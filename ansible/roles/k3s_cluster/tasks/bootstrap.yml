@@ -26,7 +26,6 @@
     cluster_exists: "{{ (vip_probe.status | default(0)) in [200, 401, 403] }}"
   when: not k3s_already_running
 
-# --- Path A: this node was rebuilt but the cluster survived on the other two — rejoin, don't re-init ---
 - name: Rejoin existing cluster (this node was rebuilt; cluster survived on the VIP)
   ansible.builtin.shell: >
     curl -sfL https://get.k3s.io |
@@ -35,12 +34,10 @@
     --flannel-backend=none
     --disable traefik
     --tls-san "{{ k3s_api_server }}"
-  environment:
-    K3S_TOKEN: "{{ vault_k3s_cluster_token }}"
-  no_log: true
-  when:
-    - not k3s_already_running
-    - cluster_exists | default(false)
+    --etcd-s3
+    --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
+    --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
+    --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
 
 # --- Path B: genuinely no cluster exists — this node initializes it ---
 - name: Check for a local cluster-init marker (belt-and-braces against accidental re-init)
@@ -59,14 +56,10 @@
     --flannel-backend=none
     --disable traefik
     --tls-san "{{ k3s_api_server }}"
-  environment:
-    K3S_TOKEN: "{{ vault_k3s_cluster_token }}"
-  no_log: true
-  register: cluster_init_result
-  when:
-    - not k3s_already_running
-    - not (cluster_exists | default(false))
-    - not cluster_init_marker.stat.exists
+    --etcd-s3
+    --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
+    --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
+    --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
 
 - name: Record cluster-init marker so a later re-run can't accidentally re-initialize
   ansible.builtin.file:

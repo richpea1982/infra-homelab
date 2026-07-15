@@ -29,10 +29,10 @@
     --flannel-backend=none
     --disable traefik
     --tls-san "{{ k3s_api_server }}"
-  environment:
-    K3S_TOKEN: "{{ vault_k3s_cluster_token }}"
-  no_log: true
-  when: not k3s_already_running
+    --etcd-s3
+    --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
+    --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
+    --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
 
 - name: Ensure secondary k3s service engines are verified running
   ansible.builtin.systemd:

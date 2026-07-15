@@ -2,3 +2,8 @@
 # Runtime working configurations
 k3s_config_dir: "/etc/rancher/k3s"
 k3s_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+
+# etcd snapshot to S3 (MinIO on the NAS)
+etcd_s3_config_secret: "k3s-etcd-snapshot-s3-config"
+etcd_snapshot_schedule_cron: "0 */6 * * *"
+etcd_snapshot_retention: 5
