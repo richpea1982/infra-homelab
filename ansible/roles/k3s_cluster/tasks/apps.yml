@@ -173,3 +173,6 @@
         type: git
         url: "{{ gitops_repo_url }}"
         sshPrivateKey: "{{ argocd_priv_key['content'] | b64decode }}"
+
+- name: Override default StorageClass reclaim policy
+  include_tasks: storageclass-retain.yml

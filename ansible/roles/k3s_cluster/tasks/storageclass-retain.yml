@@ -1,0 +1,27 @@
+---
+# Export the existing StorageClass
+- name: Read default local-path StorageClass
+  kubernetes.core.k8s_info:
+    kind: StorageClass
+    name: local-path
+  register: sc
+
+# Write modified StorageClass to disk
+- name: Render retained StorageClass
+  copy:
+    dest: /tmp/local-path-retain.yaml
+    content: "{{ sc.resources[0] | to_yaml | regex_replace('reclaimPolicy: Delete', 'reclaimPolicy: Retain') }}"
+
+# Delete the default StorageClass
+- name: Delete default local-path StorageClass
+  kubernetes.core.k8s:
+    state: absent
+    kind: StorageClass
+    name: local-path
+  ignore_errors: true
+
+# Apply the retained version
+- name: Apply retained StorageClass
+  kubernetes.core.k8s:
+    state: present
+    src: /tmp/local-path-retain.yaml
