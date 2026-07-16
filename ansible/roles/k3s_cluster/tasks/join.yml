@@ -33,6 +33,7 @@
     --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
     --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
     --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
+  when: not k3s_already_running
 
 - name: Ensure secondary k3s service engines are verified running
   ansible.builtin.systemd:
