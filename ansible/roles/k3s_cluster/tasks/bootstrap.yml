@@ -31,6 +31,7 @@
     curl -sfL https://get.k3s.io |
     INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
     --server "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
+    --token "{{ vault_k3s_cluster_token }}"
     --flannel-backend=none
     --disable traefik
     --tls-san "{{ k3s_api_server }}"
