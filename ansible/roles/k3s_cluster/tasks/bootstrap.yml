@@ -39,6 +39,9 @@
     --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
     --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
     --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
+  when:
+    - not k3s_already_running
+    - cluster_exists | default(false)
 
 # --- Path B: genuinely no cluster exists — this node initializes it ---
 - name: Check for a local cluster-init marker (belt-and-braces against accidental re-init)
