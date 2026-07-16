@@ -1,11 +1,13 @@
 ---
 # Delete the default StorageClass (reclaimPolicy is immutable, so we must delete and recreate)
-- name: Delete default local-path StorageClass
+- name: Delete default local-path StorageClass if it exists
   kubernetes.core.k8s:
     state: absent
     kind: StorageClass
     name: local-path
-  ignore_errors: true
+    wait: true
+  register: delete_sc
+  failed_when: false
 
 # Apply the retained version cleanly using inline definition
 - name: Apply retained StorageClass
