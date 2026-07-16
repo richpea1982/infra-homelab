@@ -2,15 +2,15 @@
 - name: Execute System Pre-requisites & OS Hardening
   include_tasks: prereqs.yml
 
-- name: Bootstrap Initial Control Plane (Node 1)
+- name: Bootstrap Initial Control Plane Node 1
   include_tasks: bootstrap.yml
   when: k3s_node_index | int == 1
 
-- name: Deploy Cluster Native Network, Ingress & Security Tools
+- name: Deploy Cluster Native Network, Ingress Security Tools
   include_tasks: apps.yml
   when: k3s_node_index | int == 1
 
-- name: Join Secondary Control Planes (Nodes 2 & 3)
+- name: Join Secondary Control Planes Nodes 2 & 3
   include_tasks: join.yml
   when: k3s_node_index | int > 1
 
