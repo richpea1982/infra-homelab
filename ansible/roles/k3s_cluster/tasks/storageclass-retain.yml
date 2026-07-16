@@ -5,7 +5,7 @@
     state: absent
     kind: StorageClass
     name: local-path
-    ignore_errors: true
+  ignore_errors: true
 
 # Apply the retained version cleanly using inline definition
 - name: Apply retained StorageClass
