@@ -66,7 +66,7 @@
     path: /etc/rancher/k3s/cluster-initialized
     state: touch
     mode: '0600'
-  when: cluster_init_result is not skipped
+  when: cluster_init_result is defined and cluster_init_result is not skipped
 
 # --- Bring the service up, regardless of which path was taken above ---
 - name: Ensure server service is up
