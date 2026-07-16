@@ -60,6 +60,8 @@
     --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
     --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
     --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
+  register: cluster_init_result                   # <--- ADD THIS
+  when: not cluster_init_marker.stat.exists       # <--- HIGHLY RECOMMENDED
 
 - name: Record cluster-init marker so a later re-run can't accidentally re-initialize
   ansible.builtin.file:
