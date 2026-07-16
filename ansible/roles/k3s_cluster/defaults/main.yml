@@ -7,3 +7,5 @@ k3s_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
 etcd_s3_config_secret: "k3s-etcd-snapshot-s3-config"
 etcd_snapshot_schedule_cron: "0 */6 * * *"
 etcd_snapshot_retention: 5
+etcd_s3_endpoint: "10.0.10.15:9000"
+etcd_s3_bucket: "k3s-etcd-snapshots"

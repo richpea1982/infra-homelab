@@ -176,3 +176,37 @@
 
 - name: Override default StorageClass reclaim policy
   include_tasks: storageclass-retain.yml
+
+# Prep and setup for etcs snapshots to s3 bucket
+- name: Ensure boto3/botocore are available for S3 bucket management
+  ansible.builtin.pip:
+    name:
+      - boto3
+      - botocore
+    state: present
+    extra_args: "--break-system-packages --ignore-installed"
+
+- name: Ensure a MinIO bucket exists for etcd snapshots
+  amazon.aws.s3_bucket:
+    name: "{{ etcd_s3_bucket }}"
+    state: present
+    endpoint_url: "http://{{ etcd_s3_endpoint }}"
+    aws_access_key: "{{ vault_minio_root_user }}"
+    aws_secret_key: "{{ vault_minio_root_password }}"
+
+- name: Create the etcd snapshot S3 config secret for k3s
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ etcd_s3_config_secret }}"
+        namespace: kube-system
+      type: Opaque
+      stringData:
+        etcd-s3-endpoint: "{{ etcd_s3_endpoint }}"
+        etcd-s3-skip-ssl-verify: "true"
+        etcd-s3-bucket: "{{ etcd_s3_bucket }}"
+        etcd-s3-access-key: "{{ vault_minio_root_user }}"
+        etcd-s3-secret-key: "{{ vault_minio_root_password }}"
