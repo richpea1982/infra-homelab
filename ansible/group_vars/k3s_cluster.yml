@@ -16,5 +16,5 @@ argocd_helm_version: "7.7.11"
 # GitOps repo — ArgoCD's root Application watches this path for everything
 # deployed after bootstrap.
 gitops_repo_url: "git@github.com:richpea1982/k3s.git"
-gitops_repo_path: "k3s/gitops/apps"
+gitops_repo_path: "gitops/apps"
 gitops_repo_revision: "main"
