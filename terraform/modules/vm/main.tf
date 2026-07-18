@@ -1,13 +1,14 @@
 # 1. This resource handles downloading the Debian 13 Cloud Image to Proxmox
 resource "proxmox_virtual_environment_download_file" "debian_cloud" {
-  content_type = "iso"
-  datastore_id = "local"
-  node_name    = var.node_name
-  url          = var.image_url
-  
+  content_type       = "iso"
+  datastore_id       = "local"
+  node_name          = var.node_name
+  url                = var.image_url
+  checksum           = var.image_checksum
+  checksum_algorithm = "sha512"
+
   file_name    = "debian-13-${var.hostname}.img" 
 }
-
 # 2. This resource generates the Cloud-Init script text on the fly
 resource "proxmox_virtual_environment_file" "vendor_data" {
   content_type = "snippets"
