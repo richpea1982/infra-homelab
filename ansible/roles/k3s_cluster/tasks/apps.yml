@@ -206,7 +206,7 @@
       type: Opaque
       stringData:
         etcd-s3-endpoint: "{{ etcd_s3_endpoint }}"
-        etcd-s3-skip-ssl-verify: "true"
+        etcd-s3-insecure: "true"
         etcd-s3-bucket: "{{ etcd_s3_bucket }}"
         etcd-s3-access-key: "{{ vault_minio_root_user }}"
         etcd-s3-secret-key: "{{ vault_minio_root_password }}"
