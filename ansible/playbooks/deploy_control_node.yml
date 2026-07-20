@@ -7,3 +7,4 @@
 
   roles:
     - role: ../roles/automation_control
+    - role: ../roles/alert_router

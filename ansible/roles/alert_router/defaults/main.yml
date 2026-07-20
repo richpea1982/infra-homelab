@@ -1,0 +1,10 @@
+---
+# These are ordinary (non-secret) IDs, but they don't exist until you've
+# manually created the project/templates in Semaphore's UI — see
+# docs/infra-notes/semaphore-dr-setup.md. Override in
+# ansible/group_vars/k3s_cluster.yml (or a new group_vars/control_node.yml)
+# once you have real values; the placeholders below will fail loudly
+# (template_id: 0 doesn't exist) rather than silently doing nothing.
+semaphore_project_id: 0
+semaphore_terraform_replace_template_id: 0
+semaphore_ansible_rejoin_template_id: 0

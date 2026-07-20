@@ -1,0 +1,76 @@
+---
+- name: Ensure alert-router application directory exists
+  file:
+    path: /opt/alert-router
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy alert-router application code
+  copy:
+    src: main.py
+    dest: /opt/alert-router/main.py
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart alert-router
+
+- name: Deploy Python requirements list
+  copy:
+    src: requirements.txt
+    dest: /opt/alert-router/requirements.txt
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart alert-router
+
+- name: Ensure python3-venv is available
+  apt:
+    name: python3-venv
+    state: present
+
+- name: Create dedicated virtualenv for alert-router
+  ansible.builtin.command:
+    cmd: python3 -m venv /opt/alert-router/venv
+    creates: /opt/alert-router/venv/bin/activate
+
+- name: Install alert-router Python dependencies into the venv
+  ansible.builtin.pip:
+    requirements: /opt/alert-router/requirements.txt
+    virtualenv: /opt/alert-router/venv
+  notify: restart alert-router
+
+- name: Ensure alert-router state directory exists
+  file:
+    path: /var/lib/alert-router
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Deploy alert-router environment file (Semaphore credentials + template IDs)
+  template:
+    src: alert-router.env.j2
+    dest: /etc/alert-router.env
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: restart alert-router
+
+- name: Deploy alert-router systemd unit
+  template:
+    src: alert-router.service.j2
+    dest: /etc/systemd/system/alert-router.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: alert_router_unit
+
+- name: Enable and start alert-router service
+  systemd:
+    name: alert-router
+    state: started
+    enabled: true
+    daemon_reload: "{{ alert_router_unit.changed }}"
