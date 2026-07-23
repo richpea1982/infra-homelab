@@ -1,0 +1,92 @@
+---
+# Runs against the privileged Jellyfin LXC (10.0.30.10, pve2). GPU device
+# nodes (/dev/dri/card0, /dev/dri/renderD128) are expected to already be
+# present via Terraform's device_passthrough block — this role verifies
+# that, rather than trying to create it, since device passthrough is a
+# Proxmox-level concern, not something Ansible can fix from inside the guest.
+
+- name: Verify GPU device nodes were actually passed through
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /dev/dri/card0
+    - /dev/dri/renderD128
+  register: gpu_device_check
+  failed_when: not gpu_device_check.stat.exists
+
+- name: Install VAAPI/QSV userspace driver and diagnostic tools
+  ansible.builtin.apt:
+    name:
+      - intel-media-va-driver-non-free
+      - vainfo
+      - nfs-common
+    state: present
+    update_cache: true
+
+- name: Verify QSV profiles are visible via vainfo (fails loudly if passthrough is broken at the driver level, not just device-node level)
+  ansible.builtin.command: vainfo
+  register: vainfo_result
+  changed_when: false
+  failed_when: "'VAProfile' not in vainfo_result.stdout"
+
+- name: Ensure media library mount points exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /mnt/jellyfin-media
+    - /mnt/jellyfin-media/dvds
+    - /mnt/jellyfin-media/music
+
+- name: Mount NAS-backed media library exports (matches nas_setup's jellyfin/dvds/music datasets)
+  ansible.posix.mount:
+    path: "{{ item.path }}"
+    src: "10.0.10.15:{{ item.export }}"
+    fstype: nfs
+    opts: "rw,soft,timeo=30"
+    state: mounted
+  loop:
+    - { path: /mnt/jellyfin-media,            export: /mnt/storage/jellyfin }
+    - { path: /mnt/jellyfin-media/dvds,        export: /mnt/storage/jellyfin/dvds }
+    - { path: /mnt/jellyfin-media/music,       export: /mnt/storage/jellyfin/music }
+
+- name: Add Jellyfin apt repository signing key
+  ansible.builtin.get_url:
+    url: https://repo.jellyfin.org/jellyfin_team.gpg.key
+    dest: /usr/share/keyrings/jellyfin.gpg
+    mode: '0644'
+
+- name: Add Jellyfin apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/debian {{ ansible_distribution_release }} main"
+    state: present
+    filename: jellyfin
+
+- name: Install Jellyfin
+  ansible.builtin.apt:
+    name: jellyfin
+    state: present
+    update_cache: true
+
+- name: Add the jellyfin service account to the render/video groups (needed to actually use the passed-through device nodes)
+  ansible.builtin.user:
+    name: jellyfin
+    groups:
+      - render
+      - video
+    append: true
+  notify: restart jellyfin
+
+- name: Ensure Jellyfin service is enabled and running
+  ansible.builtin.systemd:
+    name: jellyfin
+    state: started
+    enabled: true
+
+# Hardware acceleration itself (selecting "Intel Quick Sync (QSV)" as the
+# transcoding backend, pointing at /dev/dri/renderD128) is a one-time manual
+# step in Jellyfin's own Dashboard > Playback settings — there's no stable
+# config file/API for this worth automating for a single-instance homelab
+# app. Documented manual exception, same class as the ArgoCD deploy-key
+# registration step in K3S-BOOTSTRAP-README.md.

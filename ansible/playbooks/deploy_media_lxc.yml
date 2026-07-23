@@ -1,0 +1,9 @@
+---
+- name: Configure Jellyfin LXC (GPU-pinned, pve2)
+  hosts: media_lxc
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: ../roles/jellyfin
+      when: inventory_hostname == 'jellyfin'

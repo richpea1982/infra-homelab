@@ -1,0 +1,5 @@
+---
+- name: restart jellyfin
+  ansible.builtin.systemd:
+    name: jellyfin
+    state: restarted
