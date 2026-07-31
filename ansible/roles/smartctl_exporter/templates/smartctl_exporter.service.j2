@@ -1,0 +1,27 @@
+[Unit]
+Description=SMART metrics exporter for Prometheus (smartctl_exporter)
+Documentation=https://github.com/prometheus-community/smartctl_exporter
+After=network.target
+
+[Service]
+Type=simple
+User={{ smartctl_exporter_user }}
+Group={{ smartctl_exporter_group }}
+# smartctl needs raw ioctl access to query ATA/NVMe/SCSI devices. Rather
+# than run the whole exporter as root (upstream's own docker-compose
+# example does this), grant just the two capabilities smartctl actually
+# needs. Ambient capabilities are inherited by the smartctl subprocess
+# this binary shells out to (kernel >=4.3), so the child process doesn't
+# need its own setuid/setcap — same restricted-service-account pattern
+# as the minio user in nas_setup.
+AmbientCapabilities=CAP_SYS_RAWIO CAP_SYS_ADMIN
+CapabilityBoundingSet=CAP_SYS_RAWIO CAP_SYS_ADMIN
+NoNewPrivileges=true
+ExecStart={{ smartctl_exporter_bin_dir }}/smartctl_exporter \
+  --web.listen-address=:{{ smartctl_exporter_port }} \
+  --smartctl.path=/usr/sbin/smartctl
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

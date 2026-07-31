@@ -1,0 +1,65 @@
+---
+- name: Ensure smartmontools is installed (provides the smartctl binary itself)
+  ansible.builtin.apt:
+    name: smartmontools
+    state: present
+    update_cache: true
+
+- name: Create dedicated system group for smartctl_exporter
+  ansible.builtin.group:
+    name: "{{ smartctl_exporter_group }}"
+    system: true
+    state: present
+
+- name: Create dedicated system user for smartctl_exporter
+  ansible.builtin.user:
+    name: "{{ smartctl_exporter_user }}"
+    group: "{{ smartctl_exporter_group }}"
+    groups: disk            # read access to /dev/sd*, /dev/nvme* device nodes
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Download smartctl_exporter release archive (checksum-verified against upstream sha256sums.txt)
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus-community/smartctl_exporter/releases/download/v{{ smartctl_exporter_version }}/smartctl_exporter-{{ smartctl_exporter_version }}.{{ smartctl_exporter_arch }}.tar.gz"
+    dest: "/tmp/smartctl_exporter-{{ smartctl_exporter_version }}.tar.gz"
+    # Ansible fetches this URL, finds the line matching the downloaded
+    # filename, and verifies against it — no hardcoded hash to go stale
+    # on a version bump. Same principle as the still-open SHA512 TODO on
+    # the Debian VM image in infra-homelab; worth back-porting there too.
+    checksum: "sha256:https://github.com/prometheus-community/smartctl_exporter/releases/download/v{{ smartctl_exporter_version }}/sha256sums.txt"
+    mode: '0644'
+
+- name: Extract smartctl_exporter archive
+  ansible.builtin.unarchive:
+    src: "/tmp/smartctl_exporter-{{ smartctl_exporter_version }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/smartctl_exporter-{{ smartctl_exporter_version }}.{{ smartctl_exporter_arch }}/smartctl_exporter"
+
+- name: Install smartctl_exporter binary
+  ansible.builtin.copy:
+    src: "/tmp/smartctl_exporter-{{ smartctl_exporter_version }}.{{ smartctl_exporter_arch }}/smartctl_exporter"
+    dest: "{{ smartctl_exporter_bin_dir }}/smartctl_exporter"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: true
+  notify: restart smartctl_exporter
+
+- name: Deploy smartctl_exporter systemd unit
+  ansible.builtin.template:
+    src: smartctl_exporter.service.j2
+    dest: /etc/systemd/system/smartctl_exporter.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: smartctl_exporter_unit
+
+- name: Enable and start smartctl_exporter service
+  ansible.builtin.systemd:
+    name: smartctl_exporter
+    state: started
+    enabled: true
+    daemon_reload: "{{ smartctl_exporter_unit.changed }}"
