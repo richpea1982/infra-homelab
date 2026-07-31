@@ -1,6 +1,6 @@
 ---
 - name: Deploy SMART metrics exporter to physical hosts (Proxmox + NAS)
-  hosts: proxmox_hosts:nas_servers
+  hosts: physical_nodes
   become: true
   gather_facts: true
 
