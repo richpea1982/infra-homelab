@@ -11,6 +11,7 @@
       - ebtables
       - iptables
       - iproute2
+      - nfs-common
     state: present
   when: ansible_facts['pkg_mgr'] == 'apt'
 
