@@ -93,6 +93,21 @@
     chart_version: "{{ argocd_helm_version }}"
     release_namespace: argocd
     create_namespace: true
+    values:
+      controller:
+        podLabels:
+          workload-tier: memory-heavy
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                      - key: workload-tier
+                        operator: In
+                        values: ["memory-heavy"]
+                  topologyKey: kubernetes.io/hostname
 
 - name: Wait for the ArgoCD application controller to be Running
   kubernetes.core.k8s_info:
