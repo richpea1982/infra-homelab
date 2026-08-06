@@ -94,8 +94,9 @@
     release_namespace: argocd
     create_namespace: true
     values:
-      server:
-        insecure: true
+      configs:
+        params:
+          "server.insecure": true
       controller:
         podLabels:
           workload-tier: memory-heavy
