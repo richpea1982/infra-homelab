@@ -100,17 +100,13 @@
       controller:
         podLabels:
           workload-tier: memory-heavy
-        affinity:
-          podAntiAffinity:
-            preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 100
-                podAffinityTerm:
-                  labelSelector:
-                    matchExpressions:
-                      - key: workload-tier
-                        operator: In
-                        values: ["memory-heavy"]
-                  topologyKey: kubernetes.io/hostname
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: DoNotSchedule
+            labelSelector:
+              matchLabels:
+                workload-tier: memory-heavy
 
 - name: Wait for the ArgoCD application controller to be Running
   kubernetes.core.k8s_info:
