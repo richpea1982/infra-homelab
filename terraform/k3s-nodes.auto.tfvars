@@ -40,7 +40,7 @@ k3s_nodes = {
     gateway   = "10.0.20.1",
     vlan_id   = 20
     cores     = 3,
-    memory    = 6144, # was 5120
+    memory    = 7168, # was 5120
     disk_size = 40,
     datastore = "local-lvm"
   }
