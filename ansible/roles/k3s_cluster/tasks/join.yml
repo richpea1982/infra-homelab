@@ -9,6 +9,15 @@
   ansible.builtin.set_fact:
     k3s_already_running: "{{ k3s_local_status.status is defined and k3s_local_status.status.ActiveState == 'active' }}"
 
+# Defensive cleanup before attempting a (re)join — closes the same gap
+# found during the 2026-08 DR drill (stale TLS certs / db state from a
+# previous node identity blocking a clean rejoin, discovered on nodes 2
+# and 3 as well as the initial restore node). No-op on a genuinely fresh
+# Terraform-provisioned VM.
+- name: Defensive cleanup of any prior k3s state before joining
+  ansible.builtin.include_tasks: cleanup-stale-state.yml
+  when: not k3s_already_running
+
 - name: Wait for the VIP to be reachable before attempting to join
   ansible.builtin.uri:
     url: "https://{{ k3s_api_server }}:{{ k3s_api_port }}/readyz"

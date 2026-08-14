@@ -1,0 +1,36 @@
+---
+# Defensive teardown of any prior k3s install/state on this node before a
+# (re)join or a restore. The stat guard below makes this a safe no-op on
+# a genuinely fresh Terraform-provisioned VM — it only does real work
+# when the node actually has leftover state from a previous install
+# attempt or a previous node identity.
+#
+# Closes the gap found during the 2026-08 unplanned DR drill, where
+# rebuilt nodes retained stale TLS certificates and auto-generated
+# configs from a previous identity, requiring manual cleanup and a
+# manual `systemctl restart k3s` after the Ansible role had already run.
+
+- name: Check whether a prior k3s install is present on this node
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s-uninstall.sh
+  register: k3s_uninstall_script
+
+- name: Run the upstream k3s-uninstall.sh if a prior install exists
+  ansible.builtin.command: /usr/local/bin/k3s-uninstall.sh
+  when: k3s_uninstall_script.stat.exists
+
+- name: Remove any leftover k3s state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/rancher/k3s
+    - /var/lib/rancher/k3s
+
+- name: Recreate /etc/rancher/k3s (prereqs.yml populates it and expects it to exist)
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root

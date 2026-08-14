@@ -26,6 +26,46 @@
     cluster_exists: "{{ (vip_probe.status | default(0)) in [200, 401, 403] }}"
   when: not k3s_already_running
 
+# --- Safety rail: refuse a requested restore against a still-live cluster ---
+# A restore is destructive by design (--cluster-reset wipes this node's
+# etcd member and reseeds it from the snapshot). If the VIP is still
+# answering, a live cluster already exists — restoring now would fight
+# it, not recover it. Fail closed rather than silently doing the wrong
+# thing. Same "never let destructive automation run without a guard"
+# lesson as the terraform -target incident, applied here.
+- name: Refuse to restore if a live cluster is currently answering on the VIP
+  ansible.builtin.fail:
+    msg: >-
+      k3s_restore_from_snapshot=true but {{ k3s_api_server }}:{{ k3s_api_port }}
+      is currently answering — a live cluster already exists. Aborting
+      rather than restoring over it. If you genuinely intend to replace a
+      live cluster's state with an older snapshot, do that as a separate,
+      deliberate action, not via this automatic path.
+  when:
+    - k3s_restore_from_snapshot | default(false)
+    - cluster_exists | default(false)
+    - not k3s_already_running
+
+# --- Defensive cleanup before any path below — safe no-op on a
+# genuinely fresh Terraform-provisioned VM, real work only if this node
+# carries leftover state from a previous install/identity. ---
+- name: Defensive cleanup of any prior k3s state before bootstrapping
+  ansible.builtin.include_tasks: cleanup-stale-state.yml
+  when: not k3s_already_running
+
+# --- Path C: restore from an S3-hosted etcd snapshot (explicit opt-in only) ---
+- name: Restore control plane from etcd snapshot (Path C — full cluster loss)
+  ansible.builtin.include_tasks: restore.yml
+  when:
+    - k3s_restore_from_snapshot | default(false)
+    - not (cluster_exists | default(false))
+    - not k3s_already_running
+
+- name: Set fact — did this run take the restore path?
+  ansible.builtin.set_fact:
+    k3s_did_restore: "{{ (k3s_restore_from_snapshot | default(false)) and not (cluster_exists | default(false)) and not k3s_already_running }}"
+
+# --- Path A: rejoin existing cluster (this node was rebuilt; cluster survived on the VIP) ---
 - name: Rejoin existing cluster (this node was rebuilt; cluster survived on the VIP)
   ansible.builtin.shell: >
     curl -sfL https://get.k3s.io |
@@ -43,7 +83,7 @@
     - not k3s_already_running
     - cluster_exists | default(false)
 
-# --- Path B: genuinely no cluster exists — this node initializes it ---
+# --- Path B: genuinely no cluster exists and no restore was requested — this node initializes fresh ---
 - name: Check for a local cluster-init marker (belt-and-braces against accidental re-init)
   ansible.builtin.stat:
     path: /etc/rancher/k3s/cluster-initialized
@@ -51,6 +91,7 @@
   when:
     - not k3s_already_running
     - not (cluster_exists | default(false))
+    - not (k3s_restore_from_snapshot | default(false))
 
 - name: Initialize fresh HA control plane via cluster-init
   ansible.builtin.shell: >
@@ -75,12 +116,16 @@
     mode: '0600'
   when: cluster_init_result is defined and cluster_init_result is not skipped
 
-# --- Bring the service up, regardless of which path was taken above ---
+# --- Bring the service up, regardless of which of A/B was taken above ---
+# Skipped for Path C — restore.yml already brings its own service up,
+# since a restore needs different systemd/env-file handling (stripping
+# the one-shot --cluster-reset flag) that A/B never touch.
 - name: Ensure server service is up
   ansible.builtin.systemd:
     name: k3s
     state: started
     enabled: true
+  when: not (k3s_did_restore | default(false))
 
 - name: Wait for local API server port to accept connections
   ansible.builtin.wait_for:
@@ -88,8 +133,11 @@
     port: "{{ k3s_api_port }}"
     delay: 5
     timeout: 60
+  when: not (k3s_did_restore | default(false))
 
-# --- Stand up kube-vip — only on a true fresh init. If this node rejoined an existing cluster (Path A), kube-vip's DaemonSet is already running cluster-wide. ---
+# --- Stand up kube-vip — only on a true fresh init. If this node rejoined
+# an existing cluster (Path A), kube-vip's DaemonSet is already running
+# cluster-wide. Path C applies its own copy inside restore.yml. ---
 - name: Apply kube-vip manifest (auto-applied by K3s's own controller on this node)
   ansible.builtin.copy:
     src: files/kube-vip.yaml

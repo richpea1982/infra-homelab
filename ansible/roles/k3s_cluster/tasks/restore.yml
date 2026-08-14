@@ -1,0 +1,146 @@
+---
+# Path C — restore this node's control plane from the most recent (or an
+# explicitly named) S3-hosted etcd snapshot. Only reached from
+# bootstrap.yml when k3s_restore_from_snapshot=true AND no live cluster
+# currently answers on the VIP (see the "Refuse to restore" safety-check
+# task in bootstrap.yml). This path is destructive by design — it wipes
+# this node's local etcd member — and must never run against a cluster
+# that's still up.
+#
+# UNTESTED AGAINST PRODUCTION AS OF THIS WRITING. Validate this whole
+# path in a scratch environment first (local multipass VMs + a throwaway
+# local MinIO seeded from a copy of a real snapshot, never pointed at
+# prod credentials) before ever passing k3s_restore_from_snapshot=true
+# against the real cluster.
+
+- name: Defensive cleanup of any prior k3s state before restoring
+  ansible.builtin.include_tasks: cleanup-stale-state.yml
+
+- name: Ensure boto3/botocore are available for snapshot listing
+  ansible.builtin.pip:
+    name:
+      - boto3
+      - botocore
+    state: present
+    extra_args: "--break-system-packages --ignore-installed"
+
+- name: List objects in the etcd snapshot bucket (needed to resolve "latest")
+  # VERIFY BEFORE TRUSTING: confirm these parameter names and the shape
+  # of the returned data against your installed amazon.aws collection
+  # version — `ansible-doc amazon.aws.s3_object_info` on the control
+  # node is the source of truth, not this comment. Module parameter
+  # names have shifted across amazon.aws releases; this is written to
+  # the version's documented interface as of this writing but has not
+  # been run against your environment.
+  amazon.aws.s3_object_info:
+    bucket_name: "{{ etcd_s3_bucket }}"
+    endpoint_url: "http://{{ etcd_s3_endpoint }}"
+    access_key: "{{ vault_minio_root_user }}"
+    secret_key: "{{ vault_minio_root_password }}"
+  register: etcd_snapshot_objects
+  when: k3s_restore_snapshot_name == "latest"
+
+- name: Resolve "latest" to the newest matching snapshot object key
+  ansible.builtin.set_fact:
+    k3s_resolved_snapshot_name: >-
+      {{
+        (etcd_snapshot_objects.s3_keys
+          | default(etcd_snapshot_objects.objects | default([]) | map(attribute='key') | list)
+          | select('search', '^etcd-snapshot-')
+          | list
+          | sort
+          | last)
+      }}
+  when: k3s_restore_snapshot_name == "latest"
+
+- name: Use the explicitly-provided snapshot name when one was given
+  ansible.builtin.set_fact:
+    k3s_resolved_snapshot_name: "{{ k3s_restore_snapshot_name }}"
+  when: k3s_restore_snapshot_name != "latest"
+
+- name: Fail loudly if no snapshot could be resolved
+  ansible.builtin.fail:
+    msg: >-
+      Could not resolve a snapshot to restore from bucket
+      {{ etcd_s3_bucket }}. Check the bucket actually contains objects
+      matching 'etcd-snapshot-*', and that the amazon.aws collection
+      module parameters above match your installed version.
+  when: >
+    k3s_resolved_snapshot_name is not defined or
+    (k3s_resolved_snapshot_name | length) == 0
+
+- name: Report which snapshot will be restored
+  ansible.builtin.debug:
+    msg: "Restoring etcd on {{ inventory_hostname }} from snapshot: {{ k3s_resolved_snapshot_name }}"
+
+- name: Restore etcd from the resolved S3 snapshot and bring the control plane up
+  ansible.builtin.shell: >
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
+    --cluster-reset
+    --cluster-reset-restore-path="{{ k3s_resolved_snapshot_name }}"
+    --token "{{ vault_k3s_cluster_token }}"
+    --flannel-backend=none
+    --disable traefik
+    --tls-san "{{ k3s_api_server }}"
+    --etcd-s3
+    --etcd-s3-endpoint "{{ etcd_s3_endpoint }}"
+    --etcd-s3-bucket "{{ etcd_s3_bucket }}"
+    --etcd-s3-access-key "{{ vault_minio_root_user }}"
+    --etcd-s3-secret-key "{{ vault_minio_root_password }}"
+    --etcd-s3-insecure=true
+  register: restore_result
+
+# k3s docs: --cluster-reset is a one-shot flag. If it's still present the
+# next time k3s.service starts (e.g. once this play finishes, or on a
+# later reboot), k3s will try to reset AGAIN instead of starting
+# normally. The installer script persists the flags it was given into
+# /etc/systemd/system/k3s.service.env — strip cluster-reset out of that
+# file now so the *next* normal start behaves like a normal start.
+- name: Remove the one-shot cluster-reset flag from the persisted service env
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/system/k3s.service.env
+    regexp: '^K3S_CLUSTER_RESET='
+    state: absent
+  ignore_errors: true
+
+- name: Reload systemd and ensure k3s is running cleanly post-restore
+  ansible.builtin.systemd:
+    name: k3s
+    state: restarted
+    enabled: true
+    daemon_reload: true
+
+- name: Wait for local API server port to accept connections
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ k3s_api_port }}"
+    delay: 5
+    timeout: 90
+
+- name: Record cluster-init marker so a later re-run doesn't restore again
+  ansible.builtin.file:
+    path: /etc/rancher/k3s/cluster-initialized
+    state: touch
+    mode: '0600'
+
+- name: Apply kube-vip manifest (this node is now the control-plane identity)
+  ansible.builtin.copy:
+    src: files/kube-vip.yaml
+    dest: /var/lib/rancher/k3s/server/manifests/kube-vip.yaml
+    owner: root
+    mode: '0644'
+
+# --- KNOWN REMAINING GAP — not automated here, flagging rather than
+# hiding it: Ceph RBD volumes may still hold stale exclusive-lock
+# watchers referencing the pre-restore node identity, producing
+# "is still being used" errors on PVC mount. Ceph's own watcher timeout
+# (default ~30s) often clears this on its own once the dead client stops
+# being renewed; if pods stay stuck in ContainerCreating/Init past a
+# couple of minutes, check from a Ceph-admin-capable host (not this K3s
+# node — Ceph isn't part of this inventory group):
+#   rbd status <pool>/<image>
+#   ceph osd blacklist add <stale-client-addr>   # if a stale watcher persists
+# Automating this cleanly needs a separate play targeting pve2/pve3/pve4
+# (the Ceph hosts), not this role. Scoped as explicit follow-up work,
+# not silently assumed away.

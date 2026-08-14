@@ -9,3 +9,21 @@ etcd_snapshot_schedule_cron: "0 */6 * * *"
 etcd_snapshot_retention: 5
 etcd_s3_endpoint: "10.0.10.15:9000"
 etcd_s3_bucket: "k3s-etcd-snapshots"
+
+# --- Disaster recovery: restore from an S3-hosted etcd snapshot ---
+# Opt-in only — never triggered automatically by a normal playbook run.
+# Pass explicitly, e.g.:
+#   ansible-playbook -i hosts/hosts.ini deploy_k3s.yml \
+#     -e k3s_restore_from_snapshot=true \
+#     -e k3s_restore_snapshot_name=latest
+# ...against a genuinely dead cluster (full quorum loss — this is NOT the
+# single-node-failure path, which is already handled by the existing VIP
+# probe / rejoin logic in bootstrap.yml and join.yml).
+# See tasks/restore.yml for the full flow and its safety checks.
+k3s_restore_from_snapshot: false
+
+# "latest" resolves dynamically to the newest object in the S3 bucket
+# matching the "etcd-snapshot-" prefix. Pass an explicit snapshot object
+# name instead to restore a specific point in time rather than the most
+# recent one.
+k3s_restore_snapshot_name: "latest"
