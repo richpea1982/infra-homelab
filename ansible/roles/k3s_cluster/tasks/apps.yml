@@ -38,10 +38,23 @@
 # --- Deploy Calico (CNI) ---
 # Genuine prerequisite, not a caution: no pod — including ArgoCD's own —
 # can be scheduled without pod networking existing first.
+- name: Wait for K3s API server proxy to accept connections on port 6444
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: 6444
+    delay: 5
+    timeout: 60
+
+- name: Pause briefly to let K3s API server stabilize completely
+  ansible.builtin.pause:
+    seconds: 10
+
 - name: Add Calico (Tigera) Helm repository
   kubernetes.core.helm_repository:
     name: projectcalico
     repo_url: "https://projectcalico.docs.tigera.io/charts"
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
 - name: Install Calico CRDs (required separately as of v3.32+)
   kubernetes.core.helm:
@@ -50,6 +63,12 @@
     chart_version: "{{ calico_helm_version }}"
     release_namespace: tigera-operator
     create_namespace: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: result
+  until: result is succeeded
+  retries: 20
+  delay: 15
 
 - name: Deploy Calico CNI inside kube-system scope
   kubernetes.core.helm:
@@ -63,6 +82,8 @@
           ipPools:
             - cidr: "{{ k3s_cluster_cidr }}"
               encapsulation: VXLAN
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
 - name: Wait for Calico node pods to be Running before continuing
   kubernetes.core.k8s_info:
@@ -85,6 +106,8 @@
   kubernetes.core.helm_repository:
     name: argo
     repo_url: "https://argoproj.github.io/argo-helm"
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
 - name: Install ArgoCD
   kubernetes.core.helm:
@@ -107,6 +130,8 @@
             labelSelector:
               matchLabels:
                 workload-tier: memory-heavy
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
 - name: Wait for the ArgoCD application controller to be Running
   kubernetes.core.k8s_info:
