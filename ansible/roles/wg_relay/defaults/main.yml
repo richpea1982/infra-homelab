@@ -17,4 +17,4 @@ wg_relay_public_key_path: "{{ wg_relay_config_dir }}/publickey"
 wg_relay_peers:
   - name: opnsense
     public_key: "F63bBb1yZwsIAvIWOH7yV8IUyE/Mb4i8Yr9gXTjMDmM="
-    allowed_ips: "10.100.0.2/32 10.0.0.0/16"  # Add home subnets (e.g., 10.0.0.0/16) here if routing internal traffic through the relay
+    allowed_ips: "10.100.0.2/32, 10.0.0.0/16"  # Add home subnets (e.g., 10.0.0.0/16) here if routing internal traffic through the relay
