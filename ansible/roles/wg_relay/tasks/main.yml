@@ -1,0 +1,148 @@
+---
+# iptables-persistent prompts interactively at install time ("save
+# current IPv4 rules?") unless preseeded — without this, the apt task
+# below can hang a Semaphore run indefinitely.
+- name: Preseed iptables-persistent to skip the interactive save prompt
+  ansible.builtin.debconf:
+    name: iptables-persistent
+    question: "{{ item }}"
+    value: "false"
+    vtype: boolean
+  loop:
+    - iptables-persistent/autosave_v4
+    - iptables-persistent/autosave_v6
+
+- name: Install WireGuard tools and firewall packages
+  ansible.builtin.apt:
+    name:
+      - wireguard-tools
+      - iptables
+      - iptables-persistent
+    state: present
+    update_cache: true
+
+- name: Ensure WireGuard config directory exists, locked down
+  ansible.builtin.file:
+    path: "{{ wg_relay_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Generate WireGuard private key (idempotent — never overwrites an existing identity)
+  ansible.builtin.shell: |
+    set -o pipefail
+    umask 077
+    wg genkey > {{ wg_relay_private_key_path }}
+  args:
+    creates: "{{ wg_relay_private_key_path }}"
+    executable: /bin/bash
+
+- name: Lock down the private key file permissions
+  ansible.builtin.file:
+    path: "{{ wg_relay_private_key_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Derive the public key from the private key
+  ansible.builtin.shell: |
+    set -o pipefail
+    wg pubkey < {{ wg_relay_private_key_path }} > {{ wg_relay_public_key_path }}
+  args:
+    creates: "{{ wg_relay_public_key_path }}"
+    executable: /bin/bash
+
+- name: Read the generated public key back to the control node
+  ansible.builtin.slurp:
+    src: "{{ wg_relay_public_key_path }}"
+  register: wg_relay_public_key_raw
+
+- name: Show the relay's public key (needed for the OPNsense peer config)
+  ansible.builtin.debug:
+    msg: "Relay public key: {{ wg_relay_public_key_raw['content'] | b64decode | trim }}"
+
+- name: Read the private key back for use in the interface template
+  ansible.builtin.slurp:
+    src: "{{ wg_relay_private_key_path }}"
+  register: wg_relay_private_key_raw
+  no_log: true
+
+- name: Deploy wg0.conf
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: "{{ wg_relay_config_dir }}/{{ wg_relay_interface }}.conf"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: restart wireguard
+
+- name: Configure persistent IPv4 forwarding (needed to route between WireGuard peers)
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-wireguard-forwarding.conf
+    content: |
+      net.ipv4.ip_forward = 1
+    owner: root
+    group: root
+    mode: '0644'
+  register: wg_relay_sysctl_conf
+
+- name: Apply sysctl changes immediately
+  ansible.builtin.command: sysctl --system
+  when: wg_relay_sysctl_conf.changed
+  changed_when: true
+
+# --- Host firewall ---
+# Oracle's VCN Security List controls the network edge only. The
+# instance's own iptables rules are a separate, independent layer that
+# also defaults to blocking this — opening the Security List alone
+# will NOT let WireGuard traffic through.
+- name: Check whether the INPUT accept rule for WireGuard already exists
+  ansible.builtin.command: "iptables -C INPUT -p udp --dport {{ wg_relay_port }} -j ACCEPT"
+  register: wg_input_rule_check
+  failed_when: false
+  changed_when: false
+
+- name: Allow the WireGuard UDP port through the host firewall
+  ansible.builtin.command: "iptables -A INPUT -p udp --dport {{ wg_relay_port }} -j ACCEPT"
+  when: wg_input_rule_check.rc != 0
+
+- name: Check whether the FORWARD-in rule for wg0 already exists
+  ansible.builtin.command: "iptables -C FORWARD -i {{ wg_relay_interface }} -j ACCEPT"
+  register: wg_forward_in_check
+  failed_when: false
+  changed_when: false
+
+- name: Allow forwarding in through the WireGuard interface
+  ansible.builtin.command: "iptables -A FORWARD -i {{ wg_relay_interface }} -j ACCEPT"
+  when: wg_forward_in_check.rc != 0
+
+- name: Check whether the FORWARD-out rule for wg0 already exists
+  ansible.builtin.command: "iptables -C FORWARD -o {{ wg_relay_interface }} -j ACCEPT"
+  register: wg_forward_out_check
+  failed_when: false
+  changed_when: false
+
+- name: Allow forwarding out through the WireGuard interface
+  ansible.builtin.command: "iptables -A FORWARD -o {{ wg_relay_interface }} -j ACCEPT"
+  when: wg_forward_out_check.rc != 0
+
+- name: Persist iptables rules across reboots
+  ansible.builtin.command: "iptables-save"
+  register: wg_iptables_save
+  changed_when: false
+
+- name: Write persisted rules file
+  ansible.builtin.copy:
+    content: "{{ wg_iptables_save.stdout }}\n"
+    dest: /etc/iptables/rules.v4
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Ensure wg-quick@{{ wg_relay_interface }} is enabled and started
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ wg_relay_interface }}"
+    state: started
+    enabled: true

@@ -1,0 +1,8 @@
+---
+- name: Configure WireGuard VPN Relay (Oracle Cloud)
+  hosts: wireguard_relay
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: ../roles/wg_relay

@@ -1,0 +1,17 @@
+# Managed by Ansible — role: wg_relay. Do not edit by hand; changes
+# will be overwritten on the next run.
+[Interface]
+Address = {{ wg_relay_address }}
+ListenPort = {{ wg_relay_port }}
+PrivateKey = {{ wg_relay_private_key_raw['content'] | b64decode | trim }}
+{% for peer in wg_relay_peers %}
+
+# {{ peer.name }}
+[Peer]
+PublicKey = {{ peer.public_key }}
+AllowedIPs = {{ peer.allowed_ips }}
+{% if peer.endpoint is defined %}
+Endpoint = {{ peer.endpoint }}
+{% endif %}
+PersistentKeepalive = 25
+{% endfor %}

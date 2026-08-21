@@ -1,0 +1,17 @@
+---
+wg_relay_interface: wg0
+wg_relay_port: 51820
+wg_relay_address: "10.100.0.1/24"
+wg_relay_config_dir: /etc/wireguard
+wg_relay_private_key_path: "{{ wg_relay_config_dir }}/privatekey"
+wg_relay_public_key_path: "{{ wg_relay_config_dir }}/publickey"
+
+# Peers dial in via this list. Left empty for the first run — the
+# interface comes up fine with zero peers, it just isn't routing
+# anywhere yet. Add OPNsense here once its own WireGuard side exists
+# and you have its public key (see WG-RELAY-README.md).
+# Example entry:
+#   - name: opnsense
+#     public_key: "<opnsense_wg_public_key>"
+#     allowed_ips: "10.100.0.2/32,10.0.0.0/16"
+wg_relay_peers: []
