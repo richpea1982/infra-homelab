@@ -1,8 +1,7 @@
 ---
 # roles/jellyfin/tasks/main.yml
-# Provisioning tasks for Jellyfin LXC. Expects GPU device nodes to be passed
-# through by Proxmox (device_passthrough). This role verifies presence and
-# installs VAAPI/QSV userspace drivers if available in apt sources.
+# Provisioning tasks for Jellyfin LXC. Uses direct .list file writes for apt sources
+# to avoid ansible version differences around deb822_repository/apt_repository.
 
 - name: Verify GPU device nodes were actually passed through
   ansible.builtin.stat:
@@ -19,34 +18,28 @@
     (gpu_device_check.results | selectattr('stat.exists') | list | length) == 0
 
 - name: Determine if any GPU device node exists
-  set_fact:
+  ansible.builtin.set_fact:
     gpu_present: "{{ (gpu_device_check.results | selectattr('stat.exists') | list | length) > 0 }}"
 
-- name: Ensure non-free is enabled for apt (Debian/Ubuntu)
+- name: Ensure Debian non-free sources list exists (fallback for older Ansible)
   become: true
-  ansible.builtin.deb822_repository:
-    name: debian_nonfree
-    filename: debian_nonfree
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/debian_nonfree.list
     content: |
-      Types: deb
-      URIs: http://deb.debian.org/debian
-      Suites: {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'])) }}
-      Components: main contrib non-free
+      deb http://deb.debian.org/debian {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'] | default('bookworm'))) }} main contrib non-free
+  mode: '0644'
   when: ansible_facts['os_family'] == "Debian"
 
-- name: Ensure security/updates non-free is enabled (Debian/Ubuntu)
+- name: Ensure Debian security non-free sources list exists (fallback)
   become: true
-  ansible.builtin.deb822_repository:
-    name: debian_nonfree_security
-    filename: debian_nonfree_security
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/debian_nonfree_security.list
     content: |
-      Types: deb
-      URIs: http://security.debian.org/debian-security
-      Suites: {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'])) }}-security
-      Components: main contrib non-free
+      deb http://security.debian.org/debian-security {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'] | default('bookworm'))) }}-security main contrib non-free
+  mode: '0644'
   when: ansible_facts['os_family'] == "Debian"
 
-- name: Update apt cache
+- name: Update apt cache after adding non-free repos
   become: true
   ansible.builtin.apt:
     update_cache: yes
@@ -70,7 +63,7 @@
       failed_when: false
 
     - name: Set va_installed fact if any candidate is present or was installed
-      set_fact:
+      ansible.builtin.set_fact:
         va_installed: >-
           {{ (va_install_results.results | selectattr('changed') | list | length) > 0
              or (va_install_results.results | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | list | length > 0) }}
@@ -135,22 +128,25 @@
     - { path: /mnt/jellyfin-media/music,       export: /mnt/storage/jellyfin/music }
 
 - name: Add Jellyfin apt repository signing key
+  become: true
   ansible.builtin.get_url:
     url: https://repo.jellyfin.org/jellyfin_team.gpg.key
     dest: /usr/share/keyrings/jellyfin.gpg
     mode: '0644'
 
-- name: Add Jellyfin apt repository (deb822 format)
+- name: Add Jellyfin apt repository (fallback .list)
   become: true
-  ansible.builtin.deb822_repository:
-    name: jellyfin
-    filename: jellyfin
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/jellyfin.list
     content: |
-      Types: deb
-      URIs: https://repo.jellyfin.org/debian
-      Suites: {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'])) }}
-      Components: main
-      Signed-By: /usr/share/keyrings/jellyfin.gpg
+      deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/debian {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'] | default('bookworm'))) }} main
+  mode: '0644'
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Update apt cache after adding jellyfin repo
+  become: true
+  ansible.builtin.apt:
+    update_cache: yes
   when: ansible_facts['os_family'] == "Debian"
 
 - name: Install Jellyfin
@@ -159,17 +155,53 @@
     state: present
     update_cache: true
 
-- name: Add the jellyfin service account to the render/video groups (needed to actually use the passed-through device nodes)
-  ansible.builtin.user:
-    name: jellyfin
-    groups:
-      - render
-      - video
-    append: true
-  notify: restart jellyfin
+- name: Ensure container has a group matching the device node's numeric GID and add jellyfin to it
+  block:
+    - name: Stat device node to get numeric GID
+      ansible.builtin.stat:
+        path: /dev/dri/renderD128
+      register: render_dev_stat
+      when: gpu_present
 
-- name: Ensure Jellyfin service is enabled and running
-  ansible.builtin.systemd:
-    name: jellyfin
-    state: started
-    enabled: true
+    - name: Set device_gid fact
+      ansible.builtin.set_fact:
+        device_gid: "{{ render_dev_stat.stat.gid | int }}"
+      when:
+        - gpu_present
+        - render_dev_stat.stat is defined
+
+    - name: Lookup group name for device_gid (if any)
+      ansible.builtin.command:
+        cmd: "getent group {{ device_gid }}"
+      register: getent_group
+      failed_when: false
+      changed_when: false
+      when: device_gid is defined
+
+    - name: Set existing_group_name fact if getent returned a group
+      ansible.builtin.set_fact:
+        existing_group_name: "{{ (getent_group.stdout.split(':')[0]) if (getent_group.stdout|length > 0) else '' }}"
+      when: device_gid is defined
+
+    - name: Create group with host device GID if none exists
+      ansible.builtin.group:
+        name: "{{ existing_group_name | default('render') }}"
+        gid: "{{ device_gid }}"
+        state: present
+      when:
+        - device_gid is defined
+        - existing_group_name == ''
+
+    - name: Add jellyfin user to device group (by name)
+      ansible.builtin.user:
+        name: jellyfin
+        groups: "{{ existing_group_name | default('render') }}"
+        append: true
+      when: device_gid is defined
+
+    - name: Restart jellyfin to pick up new group membership
+      ansible.builtin.systemd:
+        name: jellyfin
+        state: restarted
+      when: device_gid is defined
+  when: gpu_present
