@@ -44,18 +44,3 @@ resource "proxmox_virtual_environment_container" "this" {
     type             = "debian"
   }
 
-  # features block removed — privileged-container feature-flag changes are
-  # root@pam-ticket-only in Proxmox, same restriction class as
-  # device_passthrough. Applied post-creation via SSH instead; see
-  # jellyfin_post_config null_resource in the root module.
-
-  dynamic "device_passthrough" {
-    for_each = var.device_passthrough
-    content {
-      path = device_passthrough.value.path
-      uid  = device_passthrough.value.uid
-      gid  = device_passthrough.value.gid
-      mode = device_passthrough.value.mode
-    }
-  }
-}
