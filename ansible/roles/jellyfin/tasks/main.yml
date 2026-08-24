@@ -24,18 +24,24 @@
 
 - name: Ensure non-free is enabled for apt (Debian/Ubuntu)
   become: true
-  ansible.builtin.apt_repository:
-    repo: "deb http://deb.debian.org/debian {{ (ansible_distribution_release | default(ansible_lsb.codename)) }} main contrib non-free"
-    filename: "debian_nonfree"
-    state: present
+  ansible.builtin.deb822_repository:
+    filename: debian_nonfree
+    content: |
+      Types: deb
+      URIs: http://deb.debian.org/debian
+      Suites: {{ (ansible_distribution_release | default(ansible_lsb.codename)) }}
+      Components: main contrib non-free
   when: ansible_os_family == "Debian"
 
 - name: Ensure security/updates non-free is enabled (Debian/Ubuntu)
   become: true
-  ansible.builtin.apt_repository:
-    repo: "deb http://security.debian.org/debian-security {{ (ansible_distribution_release | default(ansible_lsb.codename)) }}-security main contrib non-free"
-    filename: "debian_nonfree_security"
-    state: present
+  ansible.builtin.deb822_repository:
+    filename: debian_nonfree_security
+    content: |
+      Types: deb
+      URIs: http://security.debian.org/debian-security
+      Suites: {{ (ansible_distribution_release | default(ansible_lsb.codename)) }}-security
+      Components: main contrib non-free
   when: ansible_os_family == "Debian"
 
 - name: Update apt cache
@@ -132,11 +138,17 @@
     dest: /usr/share/keyrings/jellyfin.gpg
     mode: '0644'
 
-- name: Add Jellyfin apt repository
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/debian {{ (ansible_distribution_release | default(ansible_lsb.codename)) }} main"
-    state: present
+- name: Add Jellyfin apt repository (deb822 format)
+  become: true
+  ansible.builtin.deb822_repository:
     filename: jellyfin
+    content: |
+      Types: deb
+      URIs: https://repo.jellyfin.org/debian
+      Suites: {{ (ansible_distribution_release | default(ansible_lsb.codename)) }}
+      Components: main
+      Signed-By: /usr/share/keyrings/jellyfin.gpg
+  when: ansible_os_family == "Debian"
 
 - name: Install Jellyfin
   ansible.builtin.apt:
@@ -158,11 +170,3 @@
     name: jellyfin
     state: started
     enabled: true
-
-# Handlers
-- name: restart jellyfin
-  ansible.builtin.systemd:
-    name: jellyfin
-    state: restarted
-    daemon_reload: false
-  listen: restart jellyfin
