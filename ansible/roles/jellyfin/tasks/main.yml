@@ -86,7 +86,6 @@
   become: true
   ansible.builtin.apt:
     name:
-      - libva-utils
       - vainfo
     state: present
     update_cache: true
