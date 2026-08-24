@@ -25,31 +25,33 @@
 - name: Ensure non-free is enabled for apt (Debian/Ubuntu)
   become: true
   ansible.builtin.deb822_repository:
+    name: debian_nonfree
     filename: debian_nonfree
     content: |
       Types: deb
       URIs: http://deb.debian.org/debian
-      Suites: {{ (ansible_distribution_release | default(ansible_lsb.codename)) }}
+      Suites: {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'])) }}
       Components: main contrib non-free
-  when: ansible_os_family == "Debian"
+  when: ansible_facts['os_family'] == "Debian"
 
 - name: Ensure security/updates non-free is enabled (Debian/Ubuntu)
   become: true
   ansible.builtin.deb822_repository:
+    name: debian_nonfree_security
     filename: debian_nonfree_security
     content: |
       Types: deb
       URIs: http://security.debian.org/debian-security
-      Suites: {{ (ansible_distribution_release | default(ansible_lsb.codename)) }}-security
+      Suites: {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'])) }}-security
       Components: main contrib non-free
-  when: ansible_os_family == "Debian"
+  when: ansible_facts['os_family'] == "Debian"
 
 - name: Update apt cache
   become: true
   ansible.builtin.apt:
     update_cache: yes
     cache_valid_time: 3600
-  when: ansible_os_family == "Debian"
+  when: ansible_facts['os_family'] == "Debian"
 
 - name: Try to install available VAAPI/QSV packages (only if GPU present)
   become: true
@@ -85,7 +87,7 @@
           in the template or use a different template/storage.
       when: not va_installed
   when:
-    - ansible_os_family == "Debian"
+    - ansible_facts['os_family'] == "Debian"
     - gpu_present
 
 - name: Install VAAPI/QSV userspace driver and diagnostic tools (ensure vainfo present if available)
@@ -97,7 +99,7 @@
     state: present
     update_cache: true
   when:
-    - ansible_os_family == "Debian"
+    - ansible_facts['os_family'] == "Debian"
     - gpu_present
     - va_installed | default(false)
 
@@ -141,14 +143,15 @@
 - name: Add Jellyfin apt repository (deb822 format)
   become: true
   ansible.builtin.deb822_repository:
+    name: jellyfin
     filename: jellyfin
     content: |
       Types: deb
       URIs: https://repo.jellyfin.org/debian
-      Suites: {{ (ansible_distribution_release | default(ansible_lsb.codename)) }}
+      Suites: {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'])) }}
       Components: main
       Signed-By: /usr/share/keyrings/jellyfin.gpg
-  when: ansible_os_family == "Debian"
+  when: ansible_facts['os_family'] == "Debian"
 
 - name: Install Jellyfin
   ansible.builtin.apt:
