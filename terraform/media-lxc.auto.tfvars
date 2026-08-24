@@ -14,7 +14,7 @@ media_lxc = {
     gateway   = "10.0.30.1"
     vlan_id   = 30
     device_passthrough = [
-      { path = "/dev/dri/card0" },
+      { path = "/dev/dri/card1" },
       { path = "/dev/dri/renderD128" }
     ]
   }
