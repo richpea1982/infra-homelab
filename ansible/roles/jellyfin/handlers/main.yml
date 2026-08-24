@@ -5,4 +5,4 @@
   ansible.builtin.systemd:
     name: jellyfin
     state: restarted
-    daemon_reload: false
+    daemon_reload: true
