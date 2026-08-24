@@ -4,7 +4,7 @@ terraform {
   required_providers {
     proxmox = {
       source  = "bpg/proxmox"
-      version = "0.94.0" # NOTE: device_passthrough support and its exact
+      version = "0.95.0" # NOTE: device_passthrough support and its exact
                           # schema have moved fast in this provider (it only
                           # landed after Proxmox VE 8.2 added the underlying
                           # API). Confirm 0.94.0 actually documents
