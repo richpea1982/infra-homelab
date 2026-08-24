@@ -57,7 +57,6 @@
         - intel-media-va-driver-non-free
         - intel-media-va-driver
         - i965-va-driver
-        - libva-utils
         - vainfo
       register: va_install_results
       failed_when: false
