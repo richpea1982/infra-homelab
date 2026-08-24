@@ -43,4 +43,4 @@ resource "proxmox_virtual_environment_container" "this" {
     template_file_id = var.template_file_id
     type             = "debian"
   }
-
+}
