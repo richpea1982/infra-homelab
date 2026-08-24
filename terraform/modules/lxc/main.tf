@@ -44,15 +44,10 @@ resource "proxmox_virtual_environment_container" "this" {
     type             = "debian"
   }
 
-  # `nesting` stays false — no reason for a media-serving container to run
-  # nested containers. `mount: ["nfs"]` is the one feature flag this module
-  # actually needs: it's what lets an otherwise-unprivileged (or privileged)
-  # container mount NAS exports from inside its own guest OS, sharing the
-  # host kernel's NFS client rather than needing a Proxmox-level bind mount.
-  features {
-    nesting = false
-    mount   = var.mount_nfs ? ["nfs"] : []
-  }
+  # features block removed — privileged-container feature-flag changes are
+  # root@pam-ticket-only in Proxmox, same restriction class as
+  # device_passthrough. Applied post-creation via SSH instead; see
+  # jellyfin_post_config null_resource in the root module.
 
   dynamic "device_passthrough" {
     for_each = var.device_passthrough
