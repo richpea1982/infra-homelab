@@ -37,10 +37,25 @@ nas_datasets:
     recordsize: "1m"
   - name: "jellyfin"
     recordsize: "1m"
+    exports:
+      - subnet: "10.0.10.0/24"
+        options: "rw,async,no_subtree_check,no_root_squash"
+      - subnet: "10.0.30.0/24"
+        options: "rw,sync,no_subtree_check,insecure"
   - name: "jellyfin/dvds"
     recordsize: "1m"
+    exports:
+      - subnet: "10.0.10.0/24"
+        options: "rw,async,no_subtree_check,no_root_squash"
+      - subnet: "10.0.30.0/24"
+        options: "rw,sync,no_subtree_check,insecure"
   - name: "jellyfin/music"
     recordsize: "256k"
+    exports:
+      - subnet: "10.0.10.0/24"
+        options: "rw,async,no_subtree_check,no_root_squash"
+      - subnet: "10.0.30.0/24"
+        options: "rw,sync,no_subtree_check,insecure"
 
 # MinIO Configuration
 minio_download_url: "https://dl.min.io/server/minio/release/linux-amd64/minio"
