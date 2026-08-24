@@ -9,7 +9,7 @@
   ansible.builtin.stat:
     path: "{{ item }}"
   loop:
-    - /dev/dri/card0
+    - /dev/dri/card1
     - /dev/dri/renderD128
   register: gpu_device_check
   failed_when: not gpu_device_check.stat.exists
