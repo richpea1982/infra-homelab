@@ -1,9 +1,8 @@
 ---
-# Runs against the privileged Jellyfin LXC (10.0.30.10, pve2). GPU device
-# nodes (/dev/dri/card0, /dev/dri/renderD128) are expected to already be
-# present via Terraform's device_passthrough block — this role verifies
-# that, rather than trying to create it, since device passthrough is a
-# Proxmox-level concern, not something Ansible can fix from inside the guest.
+# roles/jellyfin/tasks/main.yml
+# Provisioning tasks for Jellyfin LXC. Expects GPU device nodes to be passed
+# through by Proxmox (device_passthrough). This role verifies presence and
+# installs VAAPI/QSV userspace drivers if available in apt sources.
 
 - name: Verify GPU device nodes were actually passed through
   ansible.builtin.stat:
@@ -12,22 +11,98 @@
     - /dev/dri/card1
     - /dev/dri/renderD128
   register: gpu_device_check
-  failed_when: not gpu_device_check.stat.exists
 
-- name: Install VAAPI/QSV userspace driver and diagnostic tools
+- name: Fail if no GPU device nodes were passed through
+  ansible.builtin.fail:
+    msg: "Expected GPU device nodes not present: ensure Proxmox device_passthrough is configured for this container."
+  when: >
+    (gpu_device_check.results | selectattr('stat.exists') | list | length) == 0
+
+- name: Determine if any GPU device node exists
+  set_fact:
+    gpu_present: "{{ (gpu_device_check.results | selectattr('stat.exists') | list | length) > 0 }}"
+
+- name: Ensure non-free is enabled for apt (Debian/Ubuntu)
+  become: true
+  ansible.builtin.apt_repository:
+    repo: "deb http://deb.debian.org/debian {{ (ansible_distribution_release | default(ansible_lsb.codename)) }} main contrib non-free"
+    filename: "debian_nonfree"
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Ensure security/updates non-free is enabled (Debian/Ubuntu)
+  become: true
+  ansible.builtin.apt_repository:
+    repo: "deb http://security.debian.org/debian-security {{ (ansible_distribution_release | default(ansible_lsb.codename)) }}-security main contrib non-free"
+    filename: "debian_nonfree_security"
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Update apt cache
+  become: true
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Try to install available VAAPI/QSV packages (only if GPU present)
+  become: true
+  block:
+    - name: Attempt to install candidate VAAPI packages
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - intel-media-va-driver-non-free
+        - intel-media-va-driver
+        - i965-va-driver
+        - libva-utils
+        - vainfo
+      register: va_install_results
+      failed_when: false
+
+    - name: Set va_installed fact if any candidate is present or was installed
+      set_fact:
+        va_installed: >-
+          {{ (va_install_results.results | selectattr('changed') | list | length) > 0
+             or (va_install_results.results | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | list | length > 0) }}
+
+    - name: Debug VA install results (helpful when troubleshooting)
+      ansible.builtin.debug:
+        var: va_install_results
+      when: va_install_results is defined and va_install_results.results | length > 0
+
+    - name: Fail if GPU present but no VAAPI package available
+      ansible.builtin.fail:
+        msg: >
+          No VAAPI package available in apt sources. Ensure non-free is enabled
+          in the template or use a different template/storage.
+      when: not va_installed
+  when:
+    - ansible_os_family == "Debian"
+    - gpu_present
+
+- name: Install VAAPI/QSV userspace driver and diagnostic tools (ensure vainfo present if available)
+  become: true
   ansible.builtin.apt:
     name:
-      - intel-media-va-driver-non-free
+      - libva-utils
       - vainfo
-      - nfs-common
     state: present
     update_cache: true
+  when:
+    - ansible_os_family == "Debian"
+    - gpu_present
+    - va_installed | default(false)
 
-- name: Verify QSV profiles are visible via vainfo (fails loudly if passthrough is broken at the driver level, not just device-node level)
+- name: Verify QSV profiles are visible via vainfo (fails loudly if passthrough is broken at the driver level)
   ansible.builtin.command: vainfo
   register: vainfo_result
   changed_when: false
   failed_when: "'VAProfile' not in vainfo_result.stdout"
+  when:
+    - gpu_present
+    - va_installed | default(false)
 
 - name: Ensure media library mount points exist
   ansible.builtin.file:
@@ -59,7 +134,7 @@
 
 - name: Add Jellyfin apt repository
   ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/debian {{ ansible_distribution_release }} main"
+    repo: "deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/debian {{ (ansible_distribution_release | default(ansible_lsb.codename)) }} main"
     state: present
     filename: jellyfin
 
@@ -84,9 +159,10 @@
     state: started
     enabled: true
 
-# Hardware acceleration itself (selecting "Intel Quick Sync (QSV)" as the
-# transcoding backend, pointing at /dev/dri/renderD128) is a one-time manual
-# step in Jellyfin's own Dashboard > Playback settings — there's no stable
-# config file/API for this worth automating for a single-instance homelab
-# app. Documented manual exception, same class as the ArgoCD deploy-key
-# registration step in K3S-BOOTSTRAP-README.md.
+# Handlers
+- name: restart jellyfin
+  ansible.builtin.systemd:
+    name: jellyfin
+    state: restarted
+    daemon_reload: false
+  listen: restart jellyfin
