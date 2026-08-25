@@ -124,6 +124,7 @@ resource "null_resource" "media_lxc_post_config" {
 
   triggers = {
     vmid = module.media_lxc[each.key].vm_id
+    mac  = module.media_lxc[each.key].mac_address
   }
 
   connection {
