@@ -101,6 +101,7 @@
     --token "{{ vault_k3s_cluster_token }}"
     --flannel-backend=none
     --disable traefik
+    --disable servicelb
     --tls-san "{{ k3s_api_server }}"
     --etcd-s3
     --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
