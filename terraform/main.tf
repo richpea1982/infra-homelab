@@ -115,21 +115,3 @@ module "media_lxc" {
   device_passthrough  = each.value.device_passthrough
 }
 
-  provisioner "remote-exec" {
-    inline = concat(
-      ["pct set ${module.media_lxc[each.key].vm_id} --features nesting=0,mount=nfs"],
-      [
-        for idx, dev in each.value.device_passthrough :
-        "pct set ${module.media_lxc[each.key].vm_id} -dev${idx} path=${dev.path}"
-      ],
-      # Feature/config changes (mount permissions especially) are applied
-      # to a privileged container's AppArmor/cgroup profile at start time,
-      # not hot-reloaded into an already-running container. pct set writes
-      # the config correctly but the running instance won't reflect it
-      # until restarted — confirmed the hard way on the Jellyfin container
-      # (mount=nfs was present in `pct config` but NFS mounts didn't work
-      # until a manual restart).
-      ["pct reboot ${module.media_lxc[each.key].vm_id}"]
-    )
-  }
-}
