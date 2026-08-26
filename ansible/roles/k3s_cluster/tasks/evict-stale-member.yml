@@ -1,0 +1,64 @@
+---
+# Expects:
+#   eviction_peer      – host to run on
+#   target_node_name   – inventory_hostname of the node being rejoined
+#   target_node_ip     – ansible_host of the node being rejoined
+# Sets:
+#   eviction_succeeded – true when this peer successfully talked to etcd
+
+- name: List etcd members on peer
+  ansible.builtin.shell: |
+    set -euo pipefail
+    ETCDCTL_API=3 etcdctl \
+      --cacert=/var/lib/rancher/k3s/server/tls/etcd/server-ca.crt \
+      --cert=/var/lib/rancher/k3s/server/tls/etcd/client.crt \
+      --key=/var/lib/rancher/k3s/server/tls/etcd/client.key \
+      --endpoints=https://127.0.0.1:2379 \
+      member list
+  register: etcd_member_list
+  delegate_to: "{{ eviction_peer }}"
+  become: true
+  changed_when: false
+  failed_when: false
+
+- name: Extract stale member ID matching target IP
+  ansible.builtin.set_fact:
+    stale_etcd_member_id: >-
+      {{
+        etcd_member_list.stdout_lines
+        | select('search', target_node_ip)
+        | map('regex_replace', '^([0-9a-fA-F]+),.*', '\\1')
+        | first
+        | default('')
+      }}
+  when: etcd_member_list.rc is defined and etcd_member_list.rc == 0
+
+- name: Remove stale etcd member (if present)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    ETCDCTL_API=3 etcdctl \
+      --cacert=/var/lib/rancher/k3s/server/tls/etcd/server-ca.crt \
+      --cert=/var/lib/rancher/k3s/server/tls/etcd/client.crt \
+      --key=/var/lib/rancher/k3s/server/tls/etcd/client.key \
+      --endpoints=https://127.0.0.1:2379 \
+      member remove {{ stale_etcd_member_id }}
+  delegate_to: "{{ eviction_peer }}"
+  become: true
+  when:
+    - stale_etcd_member_id is defined
+    - (stale_etcd_member_id | length) > 0
+  register: etcd_remove_result
+
+- name: Delete Kubernetes Node object
+  ansible.builtin.command: >
+    k3s kubectl delete node {{ target_node_name }} --ignore-not-found
+  delegate_to: "{{ eviction_peer }}"
+  become: true
+  register: kubectl_delete_result
+  changed_when: "'deleted' in (kubectl_delete_result.stdout | default(''))"
+  when: etcd_member_list.rc is defined and etcd_member_list.rc == 0
+
+- name: Mark this peer as having performed a successful eviction
+  ansible.builtin.set_fact:
+    eviction_succeeded: true
+  when: etcd_member_list.rc is defined and etcd_member_list.rc == 0

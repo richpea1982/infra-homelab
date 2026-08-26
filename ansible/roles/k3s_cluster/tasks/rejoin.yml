@@ -1,8 +1,7 @@
 ---
-# Rejoin an existing, live K3s cluster via the VIP. Used by every node —
-# the primary node (via primary-node.yml) when the VIP is already
-# answering, and every secondary node unconditionally, since a secondary
-# node never performs a fresh cluster-init.
+# Rejoin an existing, live K3s cluster via the VIP.
+# Used by the primary (via primary-node.yml) when the VIP is answering,
+# and by every secondary unconditionally.
 
 - name: Check if K3s service is already active on this node
   ansible.builtin.systemd:
@@ -29,6 +28,40 @@
   delay: 10
   until: (vip_probe.status | default(0)) in [200, 401, 403]
   when: not k3s_already_running
+
+# ------------------------------------------------------------------
+# Evict stale etcd member + Kubernetes Node object from the live
+# quorum. Required after a Terraform -replace (or any hard reset)
+# because the surviving members still hold the previous etcd member
+# ID for this hostname/IP. Without the eviction the join fails with
+# "duplicate node name".
+#
+# Runs on a surviving peer. Because the alert-router refuses
+# multi-node simultaneous failures, at least one peer is alive.
+# ------------------------------------------------------------------
+- name: Evict this node's stale etcd membership and Node object
+  when: not k3s_already_running
+  block:
+    - name: Set target identity for eviction
+      ansible.builtin.set_fact:
+        target_node_name: "{{ inventory_hostname }}"
+        target_node_ip: "{{ ansible_host }}"
+        eviction_succeeded: false
+
+    - name: Try each other cluster member as eviction peer
+      ansible.builtin.include_tasks: evict-stale-member.yml
+      loop: "{{ groups['k3s_cluster'] | difference([inventory_hostname]) }}"
+      loop_control:
+        loop_var: eviction_peer
+      when: not eviction_succeeded
+
+    - name: Fail if no live peer could perform the eviction
+      ansible.builtin.fail:
+        msg: >-
+          Could not reach any other k3s_cluster host to remove the
+          stale etcd member for {{ target_node_name }} ({{ target_node_ip }}).
+          Manual intervention required (see docs/infra-notes/node-recovery.txt).
+      when: not eviction_succeeded
 
 - name: Write k3s config.yaml for joining/rejoining this node
   ansible.builtin.template:
