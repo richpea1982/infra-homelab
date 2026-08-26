@@ -115,18 +115,6 @@ module "media_lxc" {
   device_passthrough  = each.value.device_passthrough
 }
 
-# null_resource.media_lxc_post_config — delete entirely
-
-resource "null_resource" "media_lxc_post_config" {
-  for_each = var.media_lxc
-
-  depends_on = [module.media_lxc]
-
-  triggers = {
-    vmid = module.media_lxc[each.key].vm_id
-    mac  = module.media_lxc[each.key].mac_address
-  }
-
   connection {
     type        = "ssh"
     host        = "10.0.10.12"
