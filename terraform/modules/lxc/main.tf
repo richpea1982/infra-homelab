@@ -44,7 +44,6 @@ resource "proxmox_virtual_environment_container" "this" {
     type             = "debian"
   }
 
-}
   features {
     nesting = false
     mount   = var.mount_nfs ? ["nfs"] : []
@@ -59,3 +58,4 @@ resource "proxmox_virtual_environment_container" "this" {
       mode = device_passthrough.value.mode
     }
   }
+}
