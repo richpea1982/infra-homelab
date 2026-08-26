@@ -2,19 +2,17 @@
 - name: Execute System Pre-requisites & OS Hardening
   include_tasks: prereqs.yml
 
-- name: Bootstrap Initial Control Plane Node 1
-  include_tasks: bootstrap.yml
+- name: Dispatch primary node (restore or rejoin)
+  include_tasks: primary-node.yml
   when: k3s_node_index | int == 1
 
 - name: Deploy Cluster Native Network, Ingress Security Tools
   include_tasks: apps.yml
   when: k3s_node_index | int == 1
 
-- name: Join Secondary Control Planes Nodes 2 & 3
-  include_tasks: join.yml
+- name: Rejoin cluster on secondary nodes
+  include_tasks: rejoin.yml
   when: k3s_node_index | int > 1
-
-# ... (existing K3s installation tasks above) ...
 
 - name: Apply user convenience settings
   ansible.builtin.include_tasks: user-comforts.yml

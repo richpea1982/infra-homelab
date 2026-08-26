@@ -1,0 +1,73 @@
+---
+# Primary node (node_index == 1) dispatch. Steady-state, this cluster
+# already exists — the two paths that matter are restore (full loss)
+# and rejoin (this node was rebuilt, cluster survived). Fresh cluster-
+# init was a one-time operation for creating this cluster originally;
+# see tasks/first-time-bootstrap.yml (deliberately not included here).
+
+- name: Check if K3s service is already active on this node
+  ansible.builtin.systemd:
+    name: k3s
+  register: k3s_local_status
+  failed_when: false
+
+- name: Set fact — is K3s already running here?
+  ansible.builtin.set_fact:
+    k3s_already_running: "{{ k3s_local_status.status is defined and k3s_local_status.status.ActiveState == 'active' }}"
+
+- name: Probe the VIP to check whether a cluster already exists
+  ansible.builtin.uri:
+    url: "https://{{ k3s_api_server }}:{{ k3s_api_port }}/readyz"
+    validate_certs: false
+    status_code: [200, 401, 403]
+    timeout: 5
+  register: vip_probe
+  failed_when: false
+  when: not k3s_already_running
+
+- name: Set fact — does a cluster already exist and answer on the VIP?
+  ansible.builtin.set_fact:
+    cluster_exists: "{{ (vip_probe.status | default(0)) in [200, 401, 403] }}"
+  when: not k3s_already_running
+
+- name: Refuse to restore if a live cluster is currently answering on the VIP
+  ansible.builtin.fail:
+    msg: >-
+      k3s_restore_from_snapshot=true but {{ k3s_api_server }}:{{ k3s_api_port }}
+      is currently answering — a live cluster already exists. Aborting
+      rather than restoring over it.
+  when:
+    - k3s_restore_from_snapshot | default(false)
+    - cluster_exists | default(false)
+    - not k3s_already_running
+
+- name: Defensive cleanup of any prior k3s state before bootstrapping
+  ansible.builtin.include_tasks: cleanup-stale-state.yml
+  when: not k3s_already_running
+
+- name: Restore control plane from etcd snapshot
+  ansible.builtin.include_tasks: restore.yml
+  when:
+    - not k3s_already_running
+    - k3s_restore_from_snapshot | default(false)
+    - not (cluster_exists | default(false))
+
+- name: Rejoin existing cluster via the VIP
+  ansible.builtin.include_tasks: rejoin.yml
+  when:
+    - not k3s_already_running
+    - cluster_exists | default(false)
+
+- name: Fail loudly if neither restore nor rejoin applies
+  ansible.builtin.fail:
+    msg: >-
+      No live cluster answering on {{ k3s_api_server }}:{{ k3s_api_port }}
+      and k3s_restore_from_snapshot was not set. This role no longer
+      performs an automatic first-time cluster-init — pass
+      -e k3s_restore_from_snapshot=true to restore from the latest S3
+      snapshot, or see tasks/first-time-bootstrap.yml for a genuine
+      from-scratch rebuild.
+  when:
+    - not k3s_already_running
+    - not (cluster_exists | default(false))
+    - not (k3s_restore_from_snapshot | default(false))

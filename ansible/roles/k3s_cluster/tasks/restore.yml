@@ -59,22 +59,22 @@
   ansible.builtin.debug:
     msg: "Restoring etcd on {{ inventory_hostname }} from snapshot: {{ k3s_resolved_snapshot_name }}"
 
+- name: Write k3s config.yaml for post-restore control plane
+  ansible.builtin.template:
+    src: k3s-server-config.yaml.j2
+    dest: "{{ k3s_config_dir }}/config.yaml"
+    owner: root
+    group: root
+    mode: '0600'
+  vars:
+    k3s_config_etcd_s3_use_secret: false
+
 - name: Restore etcd from the resolved S3 snapshot and bring the control plane up
   ansible.builtin.shell: >
     curl -sfL https://get.k3s.io |
     INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
     --cluster-reset
     --cluster-reset-restore-path="{{ k3s_resolved_snapshot_name }}"
-    --token "{{ vault_k3s_cluster_token }}"
-    --flannel-backend=none
-    --disable traefik
-    --tls-san "{{ k3s_api_server }}"
-    --etcd-s3
-    --etcd-s3-endpoint "{{ etcd_s3_endpoint }}"
-    --etcd-s3-bucket "{{ etcd_s3_bucket }}"
-    --etcd-s3-access-key "{{ vault_minio_root_user }}"
-    --etcd-s3-secret-key "{{ vault_minio_root_password }}"
-    --etcd-s3-insecure=true
   register: restore_result
 
 - name: Remove the one-shot cluster-reset flag from the persisted service env

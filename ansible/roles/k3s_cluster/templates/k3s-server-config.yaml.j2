@@ -1,0 +1,23 @@
+{% if k3s_config_server_url is defined %}
+server: "{{ k3s_config_server_url }}"
+{% endif %}
+token: "{{ vault_k3s_cluster_token }}"
+flannel-backend: "none"
+tls-san:
+  - "{{ k3s_api_server }}"
+disable:
+  - traefik
+  - servicelb
+{% if k3s_config_etcd_s3_use_secret | default(true) %}
+etcd-s3: true
+etcd-s3-config-secret: "{{ etcd_s3_config_secret }}"
+{% else %}
+etcd-s3: true
+etcd-s3-endpoint: "{{ etcd_s3_endpoint }}"
+etcd-s3-bucket: "{{ etcd_s3_bucket }}"
+etcd-s3-access-key: "{{ vault_minio_root_user }}"
+etcd-s3-secret-key: "{{ vault_minio_root_password }}"
+etcd-s3-insecure: true
+{% endif %}
+etcd-snapshot-schedule-cron: "{{ etcd_snapshot_schedule_cron }}"
+etcd-snapshot-retention: {{ etcd_snapshot_retention }}

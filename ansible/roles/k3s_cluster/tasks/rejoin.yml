@@ -1,0 +1,61 @@
+---
+# Rejoin an existing, live K3s cluster via the VIP. Used by every node —
+# the primary node (via primary-node.yml) when the VIP is already
+# answering, and every secondary node unconditionally, since a secondary
+# node never performs a fresh cluster-init.
+
+- name: Check if K3s service is already active on this node
+  ansible.builtin.systemd:
+    name: k3s
+  register: k3s_local_status
+  failed_when: false
+
+- name: Set fact — is K3s already running here?
+  ansible.builtin.set_fact:
+    k3s_already_running: "{{ k3s_local_status.status is defined and k3s_local_status.status.ActiveState == 'active' }}"
+
+- name: Defensive cleanup of any prior k3s state before joining
+  ansible.builtin.include_tasks: cleanup-stale-state.yml
+  when: not k3s_already_running
+
+- name: Wait for the VIP to be reachable before attempting to join
+  ansible.builtin.uri:
+    url: "https://{{ k3s_api_server }}:{{ k3s_api_port }}/readyz"
+    validate_certs: false
+    status_code: [200, 401, 403]
+    timeout: 5
+  register: vip_probe
+  retries: 30
+  delay: 10
+  until: (vip_probe.status | default(0)) in [200, 401, 403]
+  when: not k3s_already_running
+
+- name: Write k3s config.yaml for joining/rejoining this node
+  ansible.builtin.template:
+    src: k3s-server-config.yaml.j2
+    dest: "{{ k3s_config_dir }}/config.yaml"
+    owner: root
+    group: root
+    mode: '0600'
+  vars:
+    k3s_config_server_url: "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
+  when: not k3s_already_running
+
+- name: Join existing cluster via the VIP
+  ansible.builtin.shell: >
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
+  when: not k3s_already_running
+
+- name: Ensure k3s service is verified running
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    enabled: true
+
+- name: Wait for local API server port to accept connections
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ k3s_api_port }}"
+    delay: 5
+    timeout: 60
