@@ -2,6 +2,13 @@
 # Rejoin an existing, live K3s cluster via the VIP.
 # Used by the primary (via primary-node.yml) when the VIP is answering,
 # and by every secondary unconditionally.
+#
+# Single-node recovery path:
+#   1. Defensive cleanup of any leftover local state
+#   2. Confirm VIP is reachable (cluster is alive)
+#   3. Evict the stale etcd member + Node object from ONE surviving peer
+#      (etcd state is shared — only one peer needs to run the removal)
+#   4. Write config pointing at the VIP and join
 
 - name: Check if K3s service is already active on this node
   ansible.builtin.systemd:
@@ -31,13 +38,10 @@
 
 # ------------------------------------------------------------------
 # Evict stale etcd member + Kubernetes Node object from the live
-# quorum. Required after a Terraform -replace (or any hard reset)
-# because the surviving members still hold the previous etcd member
-# ID for this hostname/IP. Without the eviction the join fails with
-# "duplicate node name".
+# quorum. etcd state is shared — only ONE live peer runs the removal.
 #
-# Runs on a surviving peer. Because the alert-router refuses
-# multi-node simultaneous failures, at least one peer is alive.
+# Prefer the primary (k3s_node_index == 1) when it is not the node
+# being rejoined; otherwise use any other inventory host.
 # ------------------------------------------------------------------
 - name: Evict this node's stale etcd membership and Node object
   when: not k3s_already_running
@@ -46,22 +50,28 @@
       ansible.builtin.set_fact:
         target_node_name: "{{ inventory_hostname }}"
         target_node_ip: "{{ ansible_host }}"
-        eviction_succeeded: false
 
-    - name: Try each other cluster member as eviction peer
-      ansible.builtin.include_tasks: evict-stale-member.yml
-      loop: "{{ groups['k3s_cluster'] | difference([inventory_hostname]) }}"
+    - name: Build list of other cluster members
+      ansible.builtin.set_fact:
+        other_peers: "{{ groups['k3s_cluster'] | difference([inventory_hostname]) }}"
+
+    - name: Prefer primary peer (k3s_node_index == 1) when available
+      ansible.builtin.set_fact:
+        eviction_peer: "{{ item }}"
+      loop: "{{ other_peers }}"
+      when:
+        - hostvars[item].k3s_node_index is defined
+        - (hostvars[item].k3s_node_index | int) == 1
       loop_control:
-        loop_var: eviction_peer
-      when: not eviction_succeeded
+        label: "{{ item }}"
 
-    - name: Fail if no live peer could perform the eviction
-      ansible.builtin.fail:
-        msg: >-
-          Could not reach any other k3s_cluster host to remove the
-          stale etcd member for {{ target_node_name }} ({{ target_node_ip }}).
-          Manual intervention required (see docs/infra-notes/node-recovery.txt).
-      when: not eviction_succeeded
+    - name: Fall back to first other peer if primary is the one being rejoined
+      ansible.builtin.set_fact:
+        eviction_peer: "{{ other_peers | first }}"
+      when: eviction_peer is not defined
+
+    - name: Run eviction on the selected peer
+      ansible.builtin.include_tasks: evict-stale-member.yml
 
 - name: Write k3s config.yaml for joining/rejoining this node
   ansible.builtin.template:
