@@ -115,13 +115,6 @@ module "media_lxc" {
   device_passthrough  = each.value.device_passthrough
 }
 
-  connection {
-    type        = "ssh"
-    host        = "10.0.10.12"
-    user        = "root"
-    private_key = base64decode(var.ssh_private_key_base64)
-  }
-
   provisioner "remote-exec" {
     inline = concat(
       ["pct set ${module.media_lxc[each.key].vm_id} --features nesting=0,mount=nfs"],
