@@ -1,0 +1,4270 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+ansible/
+  group_vars/
+    all/
+      vault.yml
+    k3s_cluster.yml
+  hosts/
+    hosts.ini
+  playbooks/
+    deploy_control_node.yml
+    deploy_k3s.yml
+    deploy_media_lxc.yml
+    deploy_smartctl_exporter.yml
+    deploy_wg_relay.yml
+    test_physical_nodes.yml
+  roles/
+    alert_router/
+      defaults/
+        main.yml
+      files/
+        main.py
+        requirements.txt
+      handlers/
+        main.yml
+      tasks/
+        main.yml
+      templates/
+        alert-router.env.j2
+        alert-router.service.j2
+    automation_control/
+      tasks/
+        main.yml
+      templates/
+        semaphore_config.json.j2
+      vars/
+        main.yml
+    jellyfin/
+      handlers/
+        main.yml
+      tasks/
+        main.yml
+    k3s_cluster/
+      defaults/
+        main.yml
+      files/
+        kube-vip.yaml
+      tasks/
+        apps.yml
+        bootstrap.yml
+        cleanup-stale-state.yml
+        join.yml
+        main.yml
+        prereqs.yml
+        restore.yml
+        storageclass-retain.yml
+        user-comforts.yml
+      K3S-BOOTSTRAP-README.md
+    nas_setup/
+      defaults/
+        main.yml
+      tasks/
+        file_share.yml
+        main.yml
+        minio.yml
+        packages.yml
+        zfs.yml
+      templates/
+        exports.j2
+    smartctl_exporter/
+      defaults/
+        main.yml
+      handlers/
+        main.yml
+      tasks/
+        main.yml
+      templates/
+        smartctl_exporter.service.j2
+    wg_relay/
+      defaults/
+        main.yml
+      handlers/
+        main.yml
+      tasks/
+        main.yml
+      templates/
+        wg0.conf.j2
+  nas_setup.yml
+docker-images/
+  portfolio/
+    _config.yaml
+    Dockerfile
+    Gemfile
+    index.md
+docs/
+  infra-notes/
+    archtecture.txt
+    infra.md
+    IPs.txt
+    k3s-deployment.txt
+    local-dr-restore-testing-guide.md
+    semaphore-dr-setup.md
+    zpool-disks.txt
+terraform/
+  modules/
+    lxc/
+      main.tf
+      outputs.tf
+      variables.tf
+      versions.tf
+    vm/
+      main.tf
+      outputs.tf
+      variables.tf
+      versions.tf
+  backend.tf
+  k3s-nodes.auto.tfvars
+  locals.tf
+  main.tf
+  media-lxc.auto.tfvars
+  outputs.tf
+  providers.tf
+  variables.tf
+  versions.tf
+  wordpress-sites.auto.tfvars
+.gitignore
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="ansible/roles/automation_control/tasks/main.yml">
+---
+- name: Update apt cache and install base essentials
+  apt:
+    name: "{{ essential_packages }}"
+    state: present
+    update_cache: yes
+
+- name: Ensure keyrings directory exists
+  file:
+    path: /usr/share/keyrings
+    state: directory
+    mode: '0755'
+
+# --- Install Terraform ---
+- name: Download HashiCorp GPG apt Key
+  get_url:
+    url: "{{ terraform_gpg_url }}"
+    dest: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+    mode: '0644'
+
+- name: Add HashiCorp Repository
+  apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] {{ terraform_repo_url }} {{ ansible_distribution_release }} main"
+    state: present
+    filename: hashicorp
+
+- name: Install Terraform
+  apt:
+    name: terraform
+    state: present
+
+# --- Install Ansible via Pipx (Debian 13 PEP 668 Compliant) ---
+- name: Install pipx via apt
+  apt:
+    name: pipx
+    state: present
+
+- name: Check if pipx global path is already in environment
+  command: grep -q "/usr/local/bin" /etc/environment
+  register: pipx_path_check
+  failed_when: false
+  changed_when: false
+
+- name: Ensure pipx global path is configured for the user
+  command: pipx ensurepath --global
+  become: true
+  when: pipx_path_check.rc != 0
+
+- name: Install Ansible core and community collections via pipx
+  command: pipx install --global --include-deps ansible
+  args:
+    creates: /usr/local/bin/ansible-playbook
+
+# --- Install Ansible-Semaphore (Official GitHub Package Method) ---
+- name: Fetch latest Semaphore release metadata
+  uri:
+    url: "{{ semaphore_api_url }}"
+    return_content: yes
+  register: semaphore_meta
+
+- name: Extract exact download URL for the amd64 deb package
+  set_fact:
+    semaphore_deb_url: >-
+      {{
+        (semaphore_meta.content | from_json).assets
+        | selectattr('name', 'search', '_linux_amd64.deb')
+        | map(attribute='browser_download_url')
+        | first
+      }}
+
+- name: Download latest Semaphore .deb package dynamically
+  get_url:
+    url: "{{ semaphore_deb_url }}"
+    dest: "/tmp/semaphore_latest_amd64.deb"
+    mode: '0644'
+
+- name: Install Semaphore via local apt package file
+  apt:
+    deb: "/tmp/semaphore_latest_amd64.deb"
+    state: present
+
+# --- Configure & Initialize Semaphore ---
+- name: Ensure Semaphore configuration directory exists
+  file:
+    path: /etc/semaphore
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure Data directory exists
+  file:
+    path: /var/lib/semaphore
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure SQLite database file physically exists
+  file:
+    path: /var/lib/semaphore/database.sqlite
+    state: touch
+    owner: root
+    group: root
+    mode: '0644'
+    modification_time: preserve
+    access_time: preserve
+
+- name: Deploy Semaphore configuration from Vault template
+  template:
+    src: semaphore_config.json.j2
+    dest: /etc/semaphore/config.json
+    owner: root
+    group: root
+    mode: '0640'
+
+- name: Run Semaphore database migrations
+  command: /usr/bin/semaphore migrate --config /etc/semaphore/config.json
+  register: migrate_result
+  changed_when: migrate_result.rc == 0
+
+- name: Initialize Semaphore Admin User
+  command: >
+    /usr/bin/semaphore user add --admin 
+    --login rich 
+    --name '{{ semaphore_user }}' 
+    --email '{{ semaphore_email }}' 
+    --password '{{ vault_semaphore_admin_password }}' 
+    --config /etc/semaphore/config.json
+  register: user_result
+  failed_when: 
+    - user_result.rc != 0 
+    - "'user already exists' not in user_result.stderr"
+    - "'user already exists' not in user_result.stdout"
+    - "'UNIQUE constraint failed' not in user_result.stderr" # Catches the Go panic
+  changed_when: 
+    - user_result.rc == 0
+
+- name: Force update admin password if user already exists
+  command: >
+    /usr/bin/semaphore user change-by-login 
+    --login rich 
+    --password '{{ vault_semaphore_admin_password }}' 
+    --config /etc/semaphore/config.json
+  when: >
+    user_result.rc != 0 and 
+    ('user already exists' in user_result.stderr or 
+     'user already exists' in user_result.stdout or 
+     'UNIQUE constraint failed' in user_result.stderr)
+  changed_when: true
+
+- name: Deploy Semaphore Systemd Service File
+  copy:
+    dest: /etc/systemd/system/semaphore.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Ansible Semaphore UI
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=root
+      ExecStart=/usr/bin/semaphore service --config /etc/semaphore/config.json
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+  register: systemd_file
+
+- name: Enable and start Semaphore service
+  systemd:
+    name: semaphore
+    state: started
+    enabled: yes
+    daemon_reload: "{{ systemd_file.changed }}"
+</file>
+
+<file path="ansible/roles/automation_control/templates/semaphore_config.json.j2">
+{
+  "mysql": {},
+  "postgres": {},
+  "sqlite": {
+    "host": "/var/lib/semaphore/database.sqlite"
+  },
+  "dialect": "sqlite",
+  "port": ":3000",
+  "interface": "0.0.0.0",
+  "tmp_path": "/tmp/semaphore",
+  "web_host": "http://10.0.10.17:3000",
+  "cookie_encryption": "{{ vault_semaphore_cookie_encryption }}",
+  "cookie_hash": "{{ vault_semaphore_cookie_hash }}",
+  "access_key_encryption": "{{ vault_semaphore_access_key_encryption  }}",
+  "email_alert": false,
+  "telegram_alert": false,
+  "slack_alert": false,
+  "ldap_enable": false
+}
+</file>
+
+<file path="ansible/roles/automation_control/vars/main.yml">
+---
+# Essential system packages
+essential_packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - unzip
+  - jq
+  - sqlite3
+
+# Terraform configuration
+terraform_repo_url: "https://apt.releases.hashicorp.com"
+terraform_gpg_url: "https://apt.releases.hashicorp.com/gpg"
+
+# Semaphore dynamic downloader
+semaphore_api_url: "https://api.github.com/repos/semaphoreui/semaphore/releases/latest"
+# Semaphore user
+semaphore_user: "rich"
+semaphore_email: "rpearsall1982@gmail.com"
+</file>
+
+<file path="ansible/roles/nas_setup/tasks/file_share.yml">
+---
+- name: Ensure NFS server utilities are installed
+  apt:
+    name: nfs-kernel-server
+    state: present
+
+- name: Configure NFS exports for the storage datasets
+  template:
+    src: exports.j2
+    dest: /etc/exports
+    owner: root
+    group: root
+    mode: '0644'
+  register: nfs_exports_updated
+
+- name: Reload NFS exports if configuration changed
+  command: exportfs -ra
+  when: nfs_exports_updated.changed
+
+- name: Ensure NFS server service is running and enabled
+  service:
+    name: nfs-kernel-server
+    state: started
+    enabled: true
+</file>
+
+<file path="ansible/roles/nas_setup/tasks/main.yml">
+---
+- name: Execute NAS Setup with Privilege Escalation
+  block:
+    - name: Update system and install NAS packages
+      include_tasks: packages.yml
+
+    - name: Configure ZFS Storage
+      include_tasks: zfs.yml
+
+    - name: Configure NFS Exports
+      include_tasks: file_share.yml
+
+    - name: Deploy Standalone MinIO Backend
+      include_tasks: minio.yml
+  become: true
+</file>
+
+<file path="ansible/roles/nas_setup/tasks/minio.yml">
+---
+- name: Create MinIO system group
+  group:
+    name: "{{ minio_group }}"
+    system: yes
+
+- name: Create MinIO system user
+  user:
+    name: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    system: yes
+    shell: /usr/sbin/nologin
+    create_home: no
+
+- name: Download MinIO binary
+  get_url:
+    url: "{{ minio_download_url }}"
+    dest: /usr/local/bin/minio
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Ensure MinIO configuration directory exists
+  file:
+    path: /etc/minio
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy MinIO environment configuration
+  no_log: true
+  copy: 
+    dest: /etc/minio/minio.env
+    content: |
+      MINIO_VOLUMES="{{ nas_mount_point_base }}/minio"
+      MINIO_OPTS="--address :9000 --console-address :9001"
+      MINIO_ROOT_USER="{{ vault_minio_root_user }}"
+      MINIO_ROOT_PASSWORD="{{ vault_minio_root_password }}"
+    owner: root
+    group: "{{ minio_group }}"
+    mode: '0640'
+  register: minio_env_updated
+
+- name: Fix ownership of ZFS MinIO data directory
+  file:
+    path: "{{ nas_mount_point_base }}/minio"
+    state: directory
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    recurse: no
+
+- name: Deploy MinIO systemd service unit
+  copy:
+    dest: /etc/systemd/system/minio.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=MinIO High Performance Object Storage
+      Documentation=https://docs.min.io
+      After=network.target
+      AssertFileIsExecutable=/usr/local/bin/minio
+
+      [Service]
+      Type=simple
+      User={{ minio_user }}
+      Group={{ minio_group }}
+      ProtectProc=invisible
+      EnvironmentFile=/etc/minio/minio.env
+      ExecStart=/usr/local/bin/minio server $MINIO_OPTS $MINIO_VOLUMES
+      Restart=always
+      LimitNOFILE=65536
+      TasksMax=infinity
+      TimeoutStopSec=infinity
+      SendSIGKILL=no
+
+      [Install]
+      WantedBy=multi-user.target
+  register: minio_service_updated
+
+- name: Enable and start MinIO service
+  systemd:
+    name: minio
+    state: started
+    enabled: yes
+    daemon_reload: "{{ minio_service_updated.changed }}"
+
+- name: Restart MinIO if configuration changed
+  systemd:
+    name: minio
+    state: restarted
+  when: minio_env_updated.changed and not minio_service_updated.changed
+
+- name: Wait for MinIO API to become responsive
+  uri:
+    url: "http://127.0.0.1:9000/minio/health/live"
+    status_code: 200
+  retries: 10
+  delay: 3
+  register: minio_health
+  until: minio_health.status == 200
+
+- name: Authenticate and provision Terraform state bucket on MinIO
+  amazon.aws.s3_bucket:
+    name: homelab-tf-state
+    state: present
+    # Enforce standard Object Locking parameters for native S3 transaction locks
+    object_lock_enabled: true
+    endpoint_url: "http://127.0.0.1:9000"
+    aws_access_key: "{{ vault_minio_root_user }}"
+    aws_secret_key: "{{ vault_minio_root_password }}"
+</file>
+
+<file path="ansible/roles/nas_setup/tasks/packages.yml">
+---
+- name: Ensure contrib component is added to Debian sources
+  replace:
+    path: /etc/apt/sources.list
+    regexp: '(deb http:\/\/deb\.debian\.org\/debian\/ {{ ansible_facts["distribution_release"] }} main)(?! contrib)'
+    replace: '\1 contrib'
+  become: true  # <--- Force it right here explicitly
+  register: apt_sources_updated
+
+- name: Run apt update if sources changed
+  apt:
+    update_cache: yes
+  become: true
+  when: apt_sources_updated.changed
+
+- name: Run apt upgrade
+  apt:
+    upgrade: dist
+    cache_valid_time: 3600
+  become: true
+
+- name: Install Kernel Headers, DKMS, and build tools
+  apt:
+    name:
+      - "linux-headers-{{ ansible_facts['kernel'] }}"
+      - dkms
+      - build-essential
+    state: present
+
+- name: Install SMB, NFS, and ZFS utilities
+  apt:
+    name: "{{ nas_packages }}"
+    state: present
+  become: true
+</file>
+
+<file path="ansible/roles/nas_setup/tasks/zfs.yml">
+---
+- name: Apply ZFS ARC limits to protect 8GB host memory
+  copy:
+    dest: /etc/modprobe.d/zfs.conf
+    content: |
+      options zfs zfs_arc_max=2147483648
+      options zfs zfs_arc_min=1073741824
+    owner: root
+    group: root
+    mode: '0644'
+  register: zfs_conf_updated
+
+- name: Update initramfs if ZFS configuration changed
+  command: update-initramfs -u
+  when: zfs_conf_updated.changed
+
+- name: Ensure ZFS kernel module is loaded
+  modprobe:
+    name: zfs
+    state: present
+
+- name: Ensure parent mount directory exists
+  file:
+    path: "{{ nas_mount_point_base }}"
+    state: directory
+    mode: '0755'
+
+- name: Check if ZFS pool already exists
+  command: "zpool list {{ nas_pool_name }}"
+  register: zpool_check
+  failed_when: false
+  changed_when: false
+
+- name: Create RAID-Z2 ZPOOL with optimized NAS options
+  command: >
+    zpool create -f
+    -o ashift=12
+    -O compression=lz4
+    -O xattr=sa
+    -O acltype=posixacl
+    -O atime=off
+    -O mountpoint=none
+    {{ nas_pool_name }} raidz2
+    {{ zfs_raidz2_disks | join(' ') }}
+  when: zpool_check.rc != 0
+
+- name: Create ZFS Datasets with Tailored Options
+  community.general.zfs:
+    name: "{{ nas_pool_name }}/{{ item.name }}"
+    state: present
+    extra_zfs_properties:
+      mountpoint: "{{ nas_mount_point_base }}/{{ item.name }}"
+      recordsize: "{{ item.recordsize | default('128k') }}"
+  loop: "{{ nas_datasets }}"
+</file>
+
+<file path="ansible/nas_setup.yml">
+---
+- name: Provision and Configure Home NAS Server
+  hosts: nas_servers
+  become: true
+  gather_facts: true
+
+  roles:
+    - nas_setup
+</file>
+
+<file path="docs/infra-notes/archtecture.txt">
+# Architectural Case Study: Resilient Hyperconverged Homelab Infrastructure
+
+## Executive Summary
+This project showcases the design, automation, and provisioning of a highly available, multi-layered enterprise homelab environment. The architecture balances high-performance media transcoding and photo storage alongside production-grade public web hosting. The entire infrastructure is deployed using a declarative Infrastructure-as-Code (IaC) pipeline via Terraform and orchestrated natively through Ansible.
+
+---
+
+## Technical Architecture & Resource Optimization
+
+### Hypervisor Tier (Proxmox VE Cluster)
+The infrastructure is distributed across a 3-node Proxmox VE hyperconverged cluster running a shared distributed Ceph storage pool. Physical memory and compute allocations are tuned precisely to mitigate host-level overhead while keeping workloads isolated based on risk profiles:
+
+* **pve2 (16GB RAM - High Performance Node):** Focuses on heavy, localized stateful computing. Hosts a 6GB K3s Cluster instance alongside standalone Linux Containers (LXCs) for Jellyfin (4GB) and Photoprism (4GB). Both LXCs utilize hardware acceleration via direct GPU pass-through.
+* **pve3 (16GB RAM) & pve4 (12GB RAM - High Availability Compute Pool):** Configured as the core failover zone for production Virtual Machines. 
+
+### Enterprise Workload Segmentation
+Workloads are distinctly separated by underlying virtualization technology based on their specific risk profiles and resource access requirements:
+
+1.  **Monolithic/Legacy High-Risk Production (Standalone QEMU VMs):**
+    The public-facing business web architectures (`hantaweb` running WordPress + WooCommerce and `petitsanglais`) are deployed as isolated Virtual Machines. Keeping them inside fully virtualized hardware containers ensures strict kernel separation from the rest of the cluster. These VMs utilize Proxmox HA coupled with shared Ceph storage to ensure automated stateful migration between `pve3` and `pve4` in the event of hardware failure.
+2.  **Shared-Kernel Elastic Computing (Linux Containers - LXCs):**
+    Jellyfin and Photoprism are deployed inside LXCs on `pve2`. Unlike VMs, LXCs share the host OS kernel directly, acting as an elastic memory pool. Unused RAM drops to zero when idle, feeding capacity back to the underlying hypervisor and Ceph metadata processors.
+3.  **Containerized Microservices Tier (Highly Available K3s Cluster):**
+    A 3-node hyperconverged K3s Kubernetes cluster runs with embedded Etcd multi-master replication across all hosts. This cluster manages stateless microservices, internal administrative platforms (BentoPDF, portfolio markdown site), and unified data synchronization layers (Seafile).
+
+---
+
+## Security, Networking, and Visibility Strategy
+
+### 1. Inbound Traffic & Zero-Trust Access
+The network utilizes a strict no-ingress firewall policy. Public applications are exposed securely using Cloudflare Tunnels (Argo Smart Routing), establishing an outbound-only connection to the Cloudflare edge. Internal management panels and administrative apps are entirely shielded from the internet, accessible via an overlay network utilizing a private WireGuard gateway anchored on an external cloud instance.
+
+### 2. Multi-Layered Defensive Architecture (Traefik + CrowdSec Bouncer)
+Because incoming traffic arrives over encrypted tunnels directly to the cluster nodes, traditional edge firewalls (OPNsense) cannot inspect the application-layer HTTP payloads. 
+
+To overcome this visibility constraint, a decentralized security model was designed:
+* **Ingress Layer:** The legacy bundled Traefik ingress controller inside K3s was disabled, replaced by a native deployment of the latest **Traefik v3** engine via Helm.
+* **Intrusion Detection:** **CrowdSec** is deployed inside the Kubernetes cluster, reading unencrypted access logs straight from Traefik.
+* **Active Remediation:** A CrowdSec Middleware Bouncer is attached directly to the Traefik routing configuration. This allows the cluster to parse `X-Forwarded-For` HTTP headers provided by Cloudflare, detect layer-7 malicious behavior (brute-forcing, path traversal, exploit scanning), and drop malicious traffic right at the cluster boundary.
+
+### 3. Core Networking Engine (Calico CNI)
+The default Flannel CNI was replaced with **Calico** to gain an enterprise-grade Network Policy engine. This enables fine-grained network isolation rules (micro-segmentation) directly inside the cluster pool, blocking public-facing web pods from communicating with sensitive internal databases or management nodes. Calico was deliberately selected over eBPF-based alternatives (like Cilium) to conserve vital system RAM on resource-constrained worker nodes while maintaining complete layer-3 packet enforcement.
+
+---
+
+## Core Engineering Skills Demonstrated
+* **Infrastructure-as-Code:** Declarative deployment via Terraform utilizing the `bpg/proxmox` provider.
+* **Configuration Management:** Full OS provisioning, cluster lifecycle management, and package configuration using automated Ansible playbooks.
+* **Cloud-Native Orchestration:** Advanced Helm application packaging, custom Kubernetes ingress middleware design, and microservice networking.
+* **Security Engineering:** Zero-trust architecture, Layer-7 intrusion prevention systems, and internal network micro-segmentation.
+</file>
+
+<file path="docs/infra-notes/infra.md">
+# Homelab Virtual Infrastructure Architecture
+
+This document defines the finalised VM/LXC placement plan for a 3‑node Proxmox cluster with mixed Intel/AMD CPUs, Ceph storage, Kubernetes, public web VMs, and internal LXCs.
+
+It is the reference blueprint for the Terraform rewrite.
+
+---
+
+## Cluster Overview
+
+| Node | CPU | RAM | Notes |
+|------|------|------|-------|
+| **pve1** | Intel i5‑6500 (4c) | 16GB | Strongest single‑core; ideal for web + k8s worker |
+| **pve2** | AMD PRO A10‑9700E (4c) | 16GB | Weakest CPU; ideal for infra, LXCs, k8s worker |
+| **pve3** | Intel i7‑4500U (4c) | 16GB | Low‑TDP mobile CPU; good for light web + Jellyfin |
+
+**Shared storage:** 3× Ceph OSD (1TB each)  
+**Reserved per node:** ~4GB for Proxmox + Ceph → **~12GB usable per node**
+
+---
+
+# pve1 — Primary Web + Kubernetes Worker
+
+### Role
+- Primary host for the WooCommerce store  
+- Strong single‑core performance  
+- Runs one k8s control plane + one worker  
+- Intel CPU → safe migration with pve3
+
+---
+
+### Virtual Machines
+
+| Service | Type | vCPU | RAM | VLAN | HA Group | Notes |
+|--------|------|------|------|-------|----------|-------|
+| **k8s‑cp‑1** | VM | 1 | 2GB | Internal | k8s‑cp | Control plane node #1 |
+| **k8s‑worker‑1** | VM | 2 | 4GB | Internal | k8s‑workers | Main production worker |
+| **web‑store** | VM | 3 | 4GB | DMZ | web‑critical‑intel | WooCommerce; Intel‑only HA |
+| **web‑infra (CF Tunnel / Traefik / CrowdSec)** | VM | 1 | 1GB | DMZ | web‑infra | Can be moved to k8s later |
+
+---
+
+### Total Resource Use
+- **vCPU declared:** 6–7  
+- **RAM:** ~10–11GB  
+- Fits within 12GB guest budget
+
+---
+
+# pve2 — Infra + Internal LXCs + Kubernetes Worker
+
+### Role
+- Host internal apps (Immich, Seafile, Stirling‑PDF)  
+- Runs one k8s control plane + one worker  
+- Hosts two small web VMs  
+- AMD CPU → avoid migrating Intel‑pinned VMs here
+
+---
+
+### Virtual Machines
+
+| Service | Type | vCPU | RAM | VLAN | HA Group | Notes |
+|--------|------|------|------|-------|----------|-------|
+| **k8s‑cp‑2** | VM | 1 | 2GB | Internal | k8s‑cp | Control plane node #2 |
+| **k8s‑worker‑2** | VM | 2 | 4GB | Internal | k8s‑workers | Secondary worker |
+| **web‑small‑1** | VM | 1 | 1GB | DMZ | web‑small | Public site |
+| **web‑small‑2** | VM | 1 | 1GB | DMZ | web‑small | Public site |
+
+---
+
+### LXCs (Internal Only, via Tailscale)
+
+| Service | Type | vCPU | RAM | VLAN | Notes |
+|--------|------|------|------|-------|-------|
+| **Immich** | LXC | 2 | 2GB | Internal | Heavy IO; indexing |
+| **Seafile** | LXC | 1 | 1GB | Internal | File sync |
+| **Stirling‑PDF** | LXC | 1 | 1GB | Internal | Lightweight |
+
+---
+
+### Total Resource Use
+- **vCPU declared:** 7  
+- **RAM:** ~12GB  
+- Fully utilises node capacity
+
+---
+
+# pve3 — Secondary Web + Jellyfin + Kubernetes Control Plane
+
+### Role
+- Backup Intel node for web workloads  
+- Runs Jellyfin (transcoding)  
+- Runs one k8s control plane  
+- Hosts two small web VMs
+
+---
+
+### Virtual Machines
+
+| Service | Type | vCPU | RAM | VLAN | HA Group | Notes |
+|--------|------|------|------|-------|----------|-------|
+| **k8s‑cp‑3** | VM | 1 | 2GB | Internal | k8s‑cp | Control plane node #3 |
+| **web‑small‑3** | VM | 1 | 1GB | DMZ | web‑small | Public site |
+| **web‑small‑4** | VM | 1 | 1GB | DMZ | web‑small | Public site |
+
+---
+
+### LXCs
+
+| Service | Type | vCPU | RAM | VLAN | Notes |
+|--------|------|------|------|-------|-------|
+| **Jellyfin** | LXC | 2 | 4GB | Internal | CPU‑bound transcoding |
+
+---
+
+### Total Resource Use
+- **vCPU declared:** 5  
+- **RAM:** ~8GB  
+- ~4GB headroom for spikes
+
+---
+
+# Kubernetes Cluster Layout
+
+| Node | vCPU | RAM | Role |
+|------|------|------|------|
+| **k8s‑cp‑1 (pve1)** | 1 | 2GB | Control plane |
+| **k8s‑cp‑2 (pve2)** | 1 | 2GB | Control plane |
+| **k8s‑cp‑3 (pve3)** | 1 | 2GB | Control plane |
+| **k8s‑worker‑1 (pve1)** | 2 | 4GB | Primary worker |
+| **k8s‑worker‑2 (pve2)** | 2 | 4GB | Secondary worker |
+
+### Namespaces
+- `prod` → public workloads  
+- `test` → ephemeral apps  
+- `infra` → CF tunnel, Traefik, CrowdSec, monitoring  
+
+---
+
+# Network Design
+
+| VLAN | Purpose |
+|------|---------|
+| **VLAN 10 – MGMT** | Proxmox, Ceph, SSH |
+| **VLAN 20 – DMZ** | Public web VMs, CF tunnel, Traefik |
+| **VLAN 30 – Internal** | LXCs, Kubernetes internal traffic |
+| **Tailscale** | Secure access to internal LXCs |
+
+---
+
+# HA Groups
+
+| Group | Members | Purpose |
+|--------|----------|----------|
+| **web‑critical‑intel** | pve1 + pve3 | WooCommerce VM (Intel‑only migration) |
+| **web‑small** | all nodes | Small sites |
+| **k8s‑cp** | all nodes | Control plane HA |
+| **k8s‑workers** | pve1 + pve2 | Worker nodes |
+
+---
+
+# Next Step
+
+Once this architecture is confirmed, Terraform modules will be generated for:
+
+- VM creation  
+- LXC creation  
+- Kubernetes node templates  
+- HA group assignment  
+- VLAN mapping  
+- Ansible inventory output
+</file>
+
+<file path="docs/infra-notes/IPs.txt">
+Network		10.0.0.0/24
+opnsnse		10.0.0.1
+switch		10.0.0.2
+
+Managment
+vlan10		10.0.10.0/24
+gateway		10.0.10.1
+pve1		10.0.10.11
+pve2		10.0.10.12
+pve3		10.0.10.13
+pve4		10.0.10.14
+nas 		10.0.10.15
+pbs	    	10.0.10.16
+automation	10.0.10.17
+
+k3s1		10.0.10.21
+k3s2		10.0.10.22
+k3s3		10.0.10.23
+
+Internal lan
+vlan20		10.0.20.0/24
+gateway		10.0.20.1
+Traefik		10.0.20.11
+gafana		10.0.20.20
+prometheus	10.0.20.21
+linuxpc		dhcp
+
+external private
+vlan30		10.0.30.0/24
+gateway		10.0.30.1
+jellyfin	10.0.30.11
+photoprism	10.0.30.12
+bentopdf	10.0.30.13
+
+internet exposed
+vlan40		10.0.40.0/24
+gateway		10.0.40.1
+petitsanglais	10.0.40.11
+hantaweb	10.0.40.12
+richweb		10.0.40.13
+seafile		10.0.40.21
+
+untrusted
+vlan50		10.0.50.0/24
+gateway		10.0.50.1
+win11pc		dhcp
+</file>
+
+<file path="docs/infra-notes/k3s-deployment.txt">
+================================================================================
+ANSIBLE INFRASTRUCTURE SPECIFICATION: K3S CLUSTER WITH CALICO & TRAEFIK V3
+================================================================================
+
+Target Environment:
+  - Control Plane Nodes: 3 Nodes (Hyperconverged Schedulable Master/Workers)
+  - Target Hosts: 
+      * k3s-pve2 (10.0.10.21) - 6GB RAM Allocated
+      * k3s-pve3 (10.0.10.22) - 6GB RAM Allocated
+      * k3s-pve4 (10.0.10.23) - 5GB RAM Allocated
+  - Deployment User: rich (Configured with passwordless sudo via Cloud-Init)
+
+Architectural Prerequisites (OS-Level via Ansible):
+  - Ensure standard iptables configuration (avoiding nftables backend conflicts)
+  - Verify systemd-resolved or standard DNS mappings to avoid internal resolve loops
+  - Ensure execution of steps is idempotent (e.g., handling cluster token creation)
+
+K3s Bootstrap Execution Sequence:
+  1. Initialize Cluster on Node 1 (pve2):
+     - Executed via script: curl -sfL https://get.k3s.io | sh -s - server
+     - Mandatory Flags:
+         --flannel-backend=none  # Disables default VXLAN networking for Calico
+         --disable traefik       # Disables legacy bundled Traefik v1/v2 HelmChart
+         --cluster-init          # Directs K3s to initialize embedded Etcd datastore
+  2. Register Nodes 2 & 3 (pve3, pve4):
+     - Executed via join script targeting Node 1's API server: https://10.0.10.21:6443
+     - Mandatory Flags:
+         --server https://10.0.10.21:6443
+         --token <SECURE_SHARED_TOKEN>
+         --flannel-backend=none
+         --disable traefik
+
+Kubernetes-Native Tooling Orchestrated via Ansible:
+  1. Calico CNI Deployment:
+     - Deployed via `kubernetes.core.helm` or targeted manifest application
+     - Utilizes standard Linux routing engine to implement fine-grained Network Policies 
+       without the heavy resource overhead of eBPF.
+  2. Traefik v3 Ingress Controller:
+     - Managed via the official, community-maintained Traefik v3 Helm chart
+     - Configured to run cleanly in the `kube-system` namespace with CRD providers active
+  3. CrowdSec Security Integration:
+     - Implemented as an in-cluster security instance linked directly to Traefik v3
+     - Uses custom Traefik Middlewares (CrowdSec Bouncers) to parse incoming requests 
+       at the HTTP termination barrier.
+</file>
+
+<file path="docs/infra-notes/zpool-disks.txt">
+Raid-z2 array
+6 x 1Tb hdds
+2 x disks redundancy
+4Tb usable
+
+1
+/dev/sdb:
+ Model=WDC WD10JPVX-75JC3T0, FwRev=01.01A01, SerialNo=WXK1E63ZHKV7
+
+2
+/dev/sdc:
+Model=TOSHIBA MQ01ABD100, FwRev=AX1E1A, SerialNo=37JOPUHTT
+
+3
+/dev/sde:
+Model=ST1000LM024 HN-M101MBB, FwRev=2BA30001, SerialNo=S32XJ9GGC10989
+
+4
+/dev/sda:
+Model=TOSHIBA MQ01ABD100, FwRev=AX1P2C, SerialNo=Y4MLP8TYT
+
+5
+/dev/sdd:
+Model=TOSHIBA MQ01ABD100, FwRev=AX1R4C, SerialNo=Y6SGCKJFT
+
+6
+/dev/sdg:
+Model=TOSHIBA MQ01ABD100, FwRev=AX0R2J, SerialNo=865XTG96T
+</file>
+
+<file path="terraform/modules/vm/outputs.tf">
+output "ip_address" {
+  value = var.ip
+}
+
+output "vm_id" {
+  value = proxmox_virtual_environment_vm.this.vm_id
+}
+</file>
+
+<file path="terraform/locals.tf">
+locals {
+  ssh_public_key = coalesce(var.ssh_public_key, file(pathexpand("~/.ssh/id_terraform.pub")))
+}
+</file>
+
+<file path=".gitignore">
+group_vars/all/vault.yml
+# Local environment secrets
+.env
+</file>
+
+<file path="ansible/hosts/hosts.ini">
+[control_node]
+10.0.10.17	ansible_user=root
+
+[k3s_cluster]
+k3s-pve2 ansible_host=10.0.20.21 k3s_node_index=1
+k3s-pve3 ansible_host=10.0.20.22 k3s_node_index=2
+k3s-pve4 ansible_host=10.0.20.23 k3s_node_index=3
+
+[k3s_cluster:vars]
+ansible_user=rich
+</file>
+
+<file path="ansible/playbooks/deploy_control_node.yml">
+---
+- name: Configure Debian Automation Control Node
+  hosts: control_node
+  become: true
+  vars_files:
+    - ../group_vars/all/vault.yml
+
+  roles:
+    - role: ../roles/automation_control
+    - role: ../roles/alert_router
+</file>
+
+<file path="ansible/playbooks/deploy_media_lxc.yml">
+---
+- name: Configure Jellyfin LXC (GPU-pinned, pve2)
+  hosts: media_lxc
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: ../roles/jellyfin
+      when: inventory_hostname == 'jellyfin'
+</file>
+
+<file path="ansible/playbooks/deploy_wg_relay.yml">
+---
+- name: Configure WireGuard VPN Relay (Oracle Cloud)
+  hosts: wireguard_relay
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: ../roles/wg_relay
+</file>
+
+<file path="ansible/playbooks/test_physical_nodes.yml">
+---
+- name: Verify SSH connectivity and privilege escalation on physical hosts
+  hosts: physical_nodes
+  gather_facts: false
+
+  tasks:
+    - name: Confirm SSH connection works (no privilege escalation yet)
+      ansible.builtin.ping:
+
+    - name: Confirm root/sudo access works
+      ansible.builtin.command: whoami
+      become: true
+      register: whoami_result
+      changed_when: false
+
+    - name: Report effective privileged user per host
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} -> become resolves to: {{ whoami_result.stdout }}"
+</file>
+
+<file path="ansible/roles/alert_router/defaults/main.yml">
+---
+# These are ordinary (non-secret) IDs, but they don't exist until you've
+# manually created the project/templates in Semaphore's UI — see
+# docs/infra-notes/semaphore-dr-setup.md. Override in
+# ansible/group_vars/k3s_cluster.yml (or a new group_vars/control_node.yml)
+# once you have real values; the placeholders below will fail loudly
+# (template_id: 0 doesn't exist) rather than silently doing nothing.
+semaphore_project_id: 0
+semaphore_terraform_replace_template_id: 0
+semaphore_ansible_rejoin_template_id: 0
+</file>
+
+<file path="ansible/roles/alert_router/files/main.py">
+"""
+Alert Router — receives Alertmanager webhooks and drives automated K3s
+node disaster recovery via Semaphore (Terraform replace + Ansible rejoin).
+
+Runs on pve1, co-located with Semaphore/Terraform/Ansible — deliberately
+kept OUTSIDE the K3s cluster it remediates, for the same reason OPNsense,
+PBS, and Semaphore itself stay off the cluster: if this lived in K3s, a
+cluster-wide outage could take down the very thing meant to fix it.
+
+Safety model:
+  - Only ONE remediation runs at a time (state file acts as the lock).
+  - If more than one node is reported down at the same time, auto-rebuild
+    is REFUSED. Two-plus control-plane nodes down simultaneously usually
+    means either etcd quorum is already gone (nothing Terraform does fixes
+    that) or there's a shared-cause failure (switch/VLAN/power) — not a
+    single dead VM. Blindly replacing multiple etcd members at once risks
+    turning a recoverable outage into permanent data loss. This case is
+    logged as critical and left for manual intervention, full stop.
+  - A per-node cooldown prevents rebuild loops if the Ansible rejoin step
+    fails repeatedly.
+
+Known limitation to validate during testing (see semaphore-dr-setup.md):
+`terraform apply -replace` destroys and recreates the VM, but if the node
+was actually still alive (network partition, not a dead VM) rather than
+truly gone, the old etcd member entry may not be cleanly removed from the
+cluster's member list before the replacement joins. Test this scenario
+deliberately — don't assume it's handled.
+"""
+
+import asyncio
+import json
+import logging
+import os
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+import httpx
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("alert-router")
+
+app = FastAPI(title="Homelab Alert Router")
+
+STATE_FILE = Path(os.environ.get("ALERT_ROUTER_STATE", "/var/lib/alert-router/state.json"))
+STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+SEMAPHORE_URL = os.environ["SEMAPHORE_URL"]  # e.g. http://127.0.0.1:3000 (same host)
+SEMAPHORE_TOKEN = os.environ["SEMAPHORE_TOKEN"]
+SEMAPHORE_PROJECT_ID = os.environ["SEMAPHORE_PROJECT_ID"]
+TERRAFORM_TEMPLATE_ID = os.environ["SEMAPHORE_TERRAFORM_REPLACE_TEMPLATE_ID"]
+ANSIBLE_TEMPLATE_ID = os.environ["SEMAPHORE_ANSIBLE_REJOIN_TEMPLATE_ID"]
+
+VALID_NODES = {"pve2", "pve3", "pve4"}
+COOLDOWN_SECONDS = int(os.environ.get("ALERT_ROUTER_COOLDOWN", 1800))  # 30 min
+POLL_INTERVAL = 10
+POLL_TIMEOUT = 900  # 15 min ceiling per Semaphore task
+
+
+def _load_state() -> dict:
+    if STATE_FILE.exists():
+        return json.loads(STATE_FILE.read_text())
+    return {"nodes_down": {}, "lock": None, "cooldowns": {}}
+
+
+def _save_state(state: dict) -> None:
+    tmp = STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2))
+    tmp.replace(STATE_FILE)
+
+
+@contextmanager
+def _locked_state():
+    # Single process, single systemd unit — no concurrent writers, so a
+    # plain read-modify-write is enough. If this ever runs with more than
+    # one worker, swap this for a real file lock (fcntl.flock).
+    state = _load_state()
+    yield state
+    _save_state(state)
+
+
+class AlertmanagerWebhook(BaseModel):
+    status: str
+    alerts: list[dict]
+
+
+@app.post("/webhook/alertmanager")
+async def receive_webhook(payload: AlertmanagerWebhook):
+    relevant = [a for a in payload.alerts if a.get("labels", {}).get("alertname") == "K3sNodeDown"]
+    if not relevant:
+        return {"ignored": True}
+
+    with _locked_state() as state:
+        for alert in relevant:
+            node = alert.get("labels", {}).get("node")
+            if node not in VALID_NODES:
+                log.warning("Alert for unrecognised node label %r — ignoring", node)
+                continue
+            if alert.get("status") == "firing":
+                state["nodes_down"][node] = time.time()
+                log.info("Node %s marked DOWN", node)
+            else:
+                state["nodes_down"].pop(node, None)
+                log.info("Node %s marked RECOVERED", node)
+
+        down_nodes = list(state["nodes_down"].keys())
+
+    if len(down_nodes) > 1:
+        log.critical(
+            "MULTIPLE nodes down simultaneously (%s) — refusing auto-rebuild. "
+            "Likely shared-cause failure or etcd quorum already lost. "
+            "Manual intervention required.",
+            down_nodes,
+        )
+        return {"action": "refused_multi_node_down", "nodes": down_nodes}
+
+    if len(down_nodes) == 1:
+        node = down_nodes[0]
+        asyncio.create_task(_maybe_remediate(node))
+        return {"action": "remediation_considered", "node": node}
+
+    return {"action": "none"}
+
+
+async def _maybe_remediate(node: str):
+    with _locked_state() as state:
+        if state.get("lock"):
+            log.info("Remediation already in progress (%s) — skipping", state["lock"])
+            return
+        cooldown_until = state["cooldowns"].get(node, 0)
+        if time.time() < cooldown_until:
+            log.info("Node %s is in cooldown until %s — skipping", node, cooldown_until)
+            return
+        # Still down right now? A near-simultaneous "resolved" webhook could
+        # have landed while we were waiting to acquire this.
+        if node not in state["nodes_down"]:
+            log.info("Node %s recovered before remediation started", node)
+            return
+        state["lock"] = node
+
+    log.warning("Starting auto-remediation for node %s", node)
+    try:
+        await _run_semaphore_template(TERRAFORM_TEMPLATE_ID, {"node_name": node}, label="terraform-replace")
+        await _run_semaphore_template(ANSIBLE_TEMPLATE_ID, {}, label="ansible-rejoin")
+        log.warning("Remediation for %s completed successfully", node)
+    except Exception:
+        log.exception("Remediation for %s FAILED — needs manual review", node)
+    finally:
+        with _locked_state() as state:
+            state["lock"] = None
+            state["cooldowns"][node] = time.time() + COOLDOWN_SECONDS
+            state["nodes_down"].pop(node, None)
+
+
+async def _run_semaphore_template(template_id: str, env: dict, label: str) -> None:
+    """
+    Uses Semaphore's documented POST /api/project/{id}/tasks endpoint
+    (confirmed: {"template_id": N, "environment": "<json string>"}).
+    Polling field names (GET .../tasks/{id} -> "status") follow the
+    conventional REST pattern but haven't been verified against your
+    specific Semaphore version — check /api-docs on your instance before
+    trusting this in production, and adjust if the field name differs.
+    """
+    headers = {
+        "Authorization": f"Bearer {SEMAPHORE_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    body = {"template_id": int(template_id), "environment": json.dumps(env)}
+    url = f"{SEMAPHORE_URL}/api/project/{SEMAPHORE_PROJECT_ID}/tasks"
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(url, headers=headers, json=body)
+        resp.raise_for_status()
+        task_id = resp.json()["id"]
+        log.info("[%s] Semaphore task %s started (template %s)", label, task_id, template_id)
+
+        deadline = time.time() + POLL_TIMEOUT
+        status_url = f"{url}/{task_id}"
+        while time.time() < deadline:
+            await asyncio.sleep(POLL_INTERVAL)
+            poll = await client.get(status_url, headers=headers)
+            poll.raise_for_status()
+            status = poll.json().get("status")
+            log.info("[%s] Semaphore task %s status: %s", label, task_id, status)
+            if status == "success":
+                return
+            if status in ("error", "fail", "failed"):
+                raise RuntimeError(f"Semaphore task {task_id} ({label}) failed")
+        raise TimeoutError(f"Semaphore task {task_id} ({label}) did not finish within {POLL_TIMEOUT}s")
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+</file>
+
+<file path="ansible/roles/alert_router/files/requirements.txt">
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+httpx==0.27.2
+pydantic==2.9.2
+</file>
+
+<file path="ansible/roles/alert_router/handlers/main.yml">
+---
+- name: restart alert-router
+  systemd:
+    name: alert-router
+    state: restarted
+</file>
+
+<file path="ansible/roles/alert_router/tasks/main.yml">
+---
+- name: Ensure alert-router application directory exists
+  file:
+    path: /opt/alert-router
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy alert-router application code
+  copy:
+    src: main.py
+    dest: /opt/alert-router/main.py
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart alert-router
+
+- name: Deploy Python requirements list
+  copy:
+    src: requirements.txt
+    dest: /opt/alert-router/requirements.txt
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart alert-router
+
+- name: Ensure python3-venv is available
+  apt:
+    name: python3-venv
+    state: present
+
+- name: Create dedicated virtualenv for alert-router
+  ansible.builtin.command:
+    cmd: python3 -m venv /opt/alert-router/venv
+    creates: /opt/alert-router/venv/bin/activate
+
+- name: Install alert-router Python dependencies into the venv
+  ansible.builtin.pip:
+    requirements: /opt/alert-router/requirements.txt
+    virtualenv: /opt/alert-router/venv
+  notify: restart alert-router
+
+- name: Ensure alert-router state directory exists
+  file:
+    path: /var/lib/alert-router
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Deploy alert-router environment file (Semaphore credentials + template IDs)
+  template:
+    src: alert-router.env.j2
+    dest: /etc/alert-router.env
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: restart alert-router
+
+- name: Deploy alert-router systemd unit
+  template:
+    src: alert-router.service.j2
+    dest: /etc/systemd/system/alert-router.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: alert_router_unit
+
+- name: Enable and start alert-router service
+  systemd:
+    name: alert-router
+    state: started
+    enabled: true
+    daemon_reload: "{{ alert_router_unit.changed }}"
+</file>
+
+<file path="ansible/roles/alert_router/templates/alert-router.env.j2">
+SEMAPHORE_URL=http://127.0.0.1:3000
+SEMAPHORE_TOKEN={{ vault_semaphore_alert_router_token }}
+SEMAPHORE_PROJECT_ID={{ semaphore_project_id }}
+SEMAPHORE_TERRAFORM_REPLACE_TEMPLATE_ID={{ semaphore_terraform_replace_template_id }}
+SEMAPHORE_ANSIBLE_REJOIN_TEMPLATE_ID={{ semaphore_ansible_rejoin_template_id }}
+ALERT_ROUTER_COOLDOWN=1800
+ALERT_ROUTER_STATE=/var/lib/alert-router/state.json
+</file>
+
+<file path="ansible/roles/alert_router/templates/alert-router.service.j2">
+[Unit]
+Description=Homelab Alert Router (Alertmanager -> Semaphore DR trigger)
+After=network.target semaphore.service
+Wants=semaphore.service
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/alert-router.env
+ExecStart=/opt/alert-router/venv/bin/uvicorn main:app --app-dir /opt/alert-router --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+</file>
+
+<file path="ansible/roles/k3s_cluster/tasks/cleanup-stale-state.yml">
+---
+# Defensive teardown of any prior k3s install/state on this node before a
+# (re)join or a restore. The stat guard below makes this a safe no-op on
+# a genuinely fresh Terraform-provisioned VM — it only does real work
+# when the node actually has leftover state from a previous install
+# attempt or a previous node identity.
+#
+# Closes the gap found during the 2026-08 unplanned DR drill, where
+# rebuilt nodes retained stale TLS certificates and auto-generated
+# configs from a previous identity, requiring manual cleanup and a
+# manual `systemctl restart k3s` after the Ansible role had already run.
+
+- name: Check whether a prior k3s install is present on this node
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s-uninstall.sh
+  register: k3s_uninstall_script
+
+- name: Run the upstream k3s-uninstall.sh if a prior install exists
+  ansible.builtin.command: /usr/local/bin/k3s-uninstall.sh
+  when: k3s_uninstall_script.stat.exists
+
+- name: Remove any leftover k3s state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/rancher/k3s
+    - /var/lib/rancher/k3s
+
+- name: Recreate /etc/rancher/k3s (prereqs.yml populates it and expects it to exist)
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+</file>
+
+<file path="ansible/roles/k3s_cluster/tasks/user-comforts.yml">
+---
+- name: Ensure .kube directory exists for user
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0700'
+
+- name: Copy K3s kubeconfig to user home directory
+  ansible.builtin.copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    remote_src: yes
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600'
+
+- name: Add helpful kubectl aliases to .bashrc
+  ansible.builtin.blockinfile:
+    path: "/home/{{ ansible_user }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED KUBERNETES ALIASES"
+    block: |
+      alias k='kubectl'
+      alias kgp='kubectl get pods'
+      alias kgn='kubectl get nodes'
+      alias kgs='kubectl get svc'
+</file>
+
+<file path="ansible/roles/k3s_cluster/K3S-BOOTSTRAP-README.md">
+# K3s Cluster Bootstrap — README
+
+This document covers the minimum steps required to provision, configure, and recover a 3-node HA K3s cluster using the Ansible playbook.
+
+---
+
+1. Prerequisites
+
+VM Infrastructure
+- Ensure k3s-pve2, k3s-pve3, and k3s-pve4 have been provisioned by Terraform.
+- Verify target IPs in ansible/hosts/hosts.ini belong to VLAN20 (10.0.20.21–23).
+
+Shared Cluster Token
+Generate a 32-character hexadecimal token and save it into your encrypted vault:
+
+openssl rand -hex 32
+ansible-vault edit ansible/group_vars/all/vault.yml
+
+Add to vault:
+vault_k3s_cluster_token: "<your_generated_token>"
+
+---
+
+2. Bootstrapping a Fresh Cluster
+
+Clean Up Prior Installs (If Retrying)
+Run these commands on any node with a failed or partial installation before starting:
+
+sudo /usr/local/bin/k3s-uninstall.sh
+sudo rm -f /etc/rancher/k3s/cluster-initialized
+
+Run the Playbook
+Execute the deployment playbook from the root ansible/ directory using the symlink:
+
+cd ansible/
+ansible-playbook -i hosts/hosts.ini deploy_k3s.yml
+
+Do not target playbooks/deploy_k3s.yml directly, or variables will not load.
+
+---
+
+3. Manual Steps After Deploying
+
+Confirm Node States
+kubectl get nodes -o wide
+
+Verify Virtual IP VIP
+curl -k https://10.0.20.20:6443/readyz
+(A 401 Unauthorized response is the expected healthy signal.)
+
+Register GitHub Deploy Key
+sudo cat /etc/ansible-secrets/argocd_k3s_deploy.pub
+Add the public key as a read-only Deploy Key in your repository settings.
+
+Verify GitOps Sync
+kubectl -n argocd get applications
+
+---
+
+4. Gotchas to Watch Out For
+
+- Token Mismatches: All joining nodes must use the same token as the init node.
+- Rejoin Logic Guard: The rejoin task uses a when: cluster_exists | default(false) guard to avoid failures when the VIP is not yet up.
+- Playbook Targets: Ensure roles target hosts: k3s_cluster and are not attached to the localhost SSH-key play.
+- NIC Configuration: kube-vip is hardcoded to eth0; update if your VM template or NIC naming differs.
+- Local-Path StorageClass Warnings: A cosmetic error in journalctl -u k3s about Delete vs Retain is expected and safe to ignore.
+- etcd-s3 Insecure Flag: For HTTP-only MinIO backends set etcd-s3-insecure: "true" rather than skipping validation.
+- S3 Snapshot Syncs: Failed etcd backups do not retry continuously; they reconcile and sync the backlog on the next successful snapshot.
+</file>
+
+<file path="ansible/roles/smartctl_exporter/defaults/main.yml">
+---
+smartctl_exporter_version: "0.14.0"
+smartctl_exporter_arch: "linux-amd64"
+smartctl_exporter_port: 9633
+smartctl_exporter_user: smartctl_exp
+smartctl_exporter_group: smartctl_exp
+smartctl_exporter_bin_dir: /usr/local/bin
+</file>
+
+<file path="ansible/roles/smartctl_exporter/handlers/main.yml">
+---
+- name: restart smartctl_exporter
+  ansible.builtin.systemd:
+    name: smartctl_exporter
+    state: restarted
+</file>
+
+<file path="ansible/roles/smartctl_exporter/tasks/main.yml">
+---
+- name: Ensure smartmontools is installed (provides the smartctl binary itself)
+  ansible.builtin.apt:
+    name: smartmontools
+    state: present
+    update_cache: true
+
+- name: Create dedicated system group for smartctl_exporter
+  ansible.builtin.group:
+    name: "{{ smartctl_exporter_group }}"
+    system: true
+    state: present
+
+- name: Create dedicated system user for smartctl_exporter
+  ansible.builtin.user:
+    name: "{{ smartctl_exporter_user }}"
+    group: "{{ smartctl_exporter_group }}"
+    groups: disk            # read access to /dev/sd*, /dev/nvme* device nodes
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Download smartctl_exporter release archive (checksum-verified against upstream sha256sums.txt)
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus-community/smartctl_exporter/releases/download/v{{ smartctl_exporter_version }}/smartctl_exporter-{{ smartctl_exporter_version }}.{{ smartctl_exporter_arch }}.tar.gz"
+    dest: "/tmp/smartctl_exporter-{{ smartctl_exporter_version }}.tar.gz"
+    # Ansible fetches this URL, finds the line matching the downloaded
+    # filename, and verifies against it — no hardcoded hash to go stale
+    # on a version bump. Same principle as the still-open SHA512 TODO on
+    # the Debian VM image in infra-homelab; worth back-porting there too.
+    checksum: "sha256:https://github.com/prometheus-community/smartctl_exporter/releases/download/v{{ smartctl_exporter_version }}/sha256sums.txt"
+    mode: '0644'
+
+- name: Extract smartctl_exporter archive
+  ansible.builtin.unarchive:
+    src: "/tmp/smartctl_exporter-{{ smartctl_exporter_version }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/smartctl_exporter-{{ smartctl_exporter_version }}.{{ smartctl_exporter_arch }}/smartctl_exporter"
+
+- name: Install smartctl_exporter binary
+  ansible.builtin.copy:
+    src: "/tmp/smartctl_exporter-{{ smartctl_exporter_version }}.{{ smartctl_exporter_arch }}/smartctl_exporter"
+    dest: "{{ smartctl_exporter_bin_dir }}/smartctl_exporter"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: true
+  notify: restart smartctl_exporter
+
+- name: Deploy smartctl_exporter systemd unit
+  ansible.builtin.template:
+    src: smartctl_exporter.service.j2
+    dest: /etc/systemd/system/smartctl_exporter.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: smartctl_exporter_unit
+
+- name: Enable and start smartctl_exporter service
+  ansible.builtin.systemd:
+    name: smartctl_exporter
+    state: started
+    enabled: true
+    daemon_reload: "{{ smartctl_exporter_unit.changed }}"
+</file>
+
+<file path="ansible/roles/smartctl_exporter/templates/smartctl_exporter.service.j2">
+[Unit]
+Description=SMART metrics exporter for Prometheus (smartctl_exporter)
+Documentation=https://github.com/prometheus-community/smartctl_exporter
+After=network.target
+
+[Service]
+Type=simple
+User={{ smartctl_exporter_user }}
+Group={{ smartctl_exporter_group }}
+# smartctl needs raw ioctl access to query ATA/NVMe/SCSI devices. Rather
+# than run the whole exporter as root (upstream's own docker-compose
+# example does this), grant just the two capabilities smartctl actually
+# needs. Ambient capabilities are inherited by the smartctl subprocess
+# this binary shells out to (kernel >=4.3), so the child process doesn't
+# need its own setuid/setcap — same restricted-service-account pattern
+# as the minio user in nas_setup.
+AmbientCapabilities=CAP_SYS_RAWIO CAP_SYS_ADMIN
+CapabilityBoundingSet=CAP_SYS_RAWIO CAP_SYS_ADMIN
+NoNewPrivileges=true
+ExecStart={{ smartctl_exporter_bin_dir }}/smartctl_exporter \
+  --web.listen-address=:{{ smartctl_exporter_port }} \
+  --smartctl.path=/usr/sbin/smartctl
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+</file>
+
+<file path="ansible/roles/wg_relay/handlers/main.yml">
+---
+- name: restart wireguard
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ wg_relay_interface }}"
+    state: restarted
+</file>
+
+<file path="ansible/roles/wg_relay/tasks/main.yml">
+---
+# iptables-persistent prompts interactively at install time ("save
+# current IPv4 rules?") unless preseeded — without this, the apt task
+# below can hang a Semaphore run indefinitely.
+- name: Preseed iptables-persistent to skip the interactive save prompt
+  ansible.builtin.debconf:
+    name: iptables-persistent
+    question: "{{ item }}"
+    value: "false"
+    vtype: boolean
+  loop:
+    - iptables-persistent/autosave_v4
+    - iptables-persistent/autosave_v6
+
+- name: Install WireGuard tools and firewall packages
+  ansible.builtin.apt:
+    name:
+      - wireguard-tools
+      - iptables
+      - iptables-persistent
+    state: present
+    update_cache: true
+
+- name: Ensure WireGuard config directory exists, locked down
+  ansible.builtin.file:
+    path: "{{ wg_relay_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Generate WireGuard private key (idempotent — never overwrites an existing identity)
+  ansible.builtin.shell: |
+    set -o pipefail
+    umask 077
+    wg genkey > {{ wg_relay_private_key_path }}
+  args:
+    creates: "{{ wg_relay_private_key_path }}"
+    executable: /bin/bash
+
+- name: Lock down the private key file permissions
+  ansible.builtin.file:
+    path: "{{ wg_relay_private_key_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Derive the public key from the private key
+  ansible.builtin.shell: |
+    set -o pipefail
+    wg pubkey < {{ wg_relay_private_key_path }} > {{ wg_relay_public_key_path }}
+  args:
+    creates: "{{ wg_relay_public_key_path }}"
+    executable: /bin/bash
+
+- name: Read the generated public key back to the control node
+  ansible.builtin.slurp:
+    src: "{{ wg_relay_public_key_path }}"
+  register: wg_relay_public_key_raw
+
+- name: Show the relay's public key (needed for the OPNsense peer config)
+  ansible.builtin.debug:
+    msg: "Relay public key: {{ wg_relay_public_key_raw['content'] | b64decode | trim }}"
+
+- name: Read the private key back for use in the interface template
+  ansible.builtin.slurp:
+    src: "{{ wg_relay_private_key_path }}"
+  register: wg_relay_private_key_raw
+  no_log: true
+
+- name: Deploy wg0.conf
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: "{{ wg_relay_config_dir }}/{{ wg_relay_interface }}.conf"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: restart wireguard
+
+- name: Configure persistent IPv4 forwarding (needed to route between WireGuard peers)
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-wireguard-forwarding.conf
+    content: |
+      net.ipv4.ip_forward = 1
+    owner: root
+    group: root
+    mode: '0644'
+  register: wg_relay_sysctl_conf
+
+- name: Apply sysctl changes immediately
+  ansible.builtin.command: sysctl --system
+  when: wg_relay_sysctl_conf.changed
+  changed_when: true
+
+# --- Host firewall ---
+# Oracle's VCN Security List controls the network edge only. The
+# instance's own iptables rules are a separate, independent layer that
+# also defaults to blocking this — opening the Security List alone
+# will NOT let WireGuard traffic through.
+- name: Check whether the INPUT accept rule for WireGuard already exists
+  ansible.builtin.command: "iptables -C INPUT -p udp --dport {{ wg_relay_port }} -j ACCEPT"
+  register: wg_input_rule_check
+  failed_when: false
+  changed_when: false
+
+- name: Allow the WireGuard UDP port through the host firewall
+  ansible.builtin.command: "iptables -A INPUT -p udp --dport {{ wg_relay_port }} -j ACCEPT"
+  when: wg_input_rule_check.rc != 0
+
+- name: Check whether the FORWARD-in rule for wg0 already exists
+  ansible.builtin.command: "iptables -C FORWARD -i {{ wg_relay_interface }} -j ACCEPT"
+  register: wg_forward_in_check
+  failed_when: false
+  changed_when: false
+
+- name: Allow forwarding in through the WireGuard interface
+  ansible.builtin.command: "iptables -A FORWARD -i {{ wg_relay_interface }} -j ACCEPT"
+  when: wg_forward_in_check.rc != 0
+
+- name: Check whether the FORWARD-out rule for wg0 already exists
+  ansible.builtin.command: "iptables -C FORWARD -o {{ wg_relay_interface }} -j ACCEPT"
+  register: wg_forward_out_check
+  failed_when: false
+  changed_when: false
+
+- name: Allow forwarding out through the WireGuard interface
+  ansible.builtin.command: "iptables -A FORWARD -o {{ wg_relay_interface }} -j ACCEPT"
+  when: wg_forward_out_check.rc != 0
+
+- name: Persist iptables rules across reboots
+  ansible.builtin.command: "iptables-save"
+  register: wg_iptables_save
+  changed_when: false
+
+- name: Write persisted rules file
+  ansible.builtin.copy:
+    content: "{{ wg_iptables_save.stdout }}\n"
+    dest: /etc/iptables/rules.v4
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Ensure wg-quick@{{ wg_relay_interface }} is enabled and started
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ wg_relay_interface }}"
+    state: started
+    enabled: true
+</file>
+
+<file path="ansible/roles/wg_relay/templates/wg0.conf.j2">
+# Managed by Ansible — role: wg_relay. Do not edit by hand; changes
+# will be overwritten on the next run.
+[Interface]
+Address = {{ wg_relay_address }}
+ListenPort = {{ wg_relay_port }}
+PrivateKey = {{ wg_relay_private_key_raw['content'] | b64decode | trim }}
+{% for peer in wg_relay_peers %}
+
+# {{ peer.name }}
+[Peer]
+PublicKey = {{ peer.public_key }}
+AllowedIPs = {{ peer.allowed_ips }}
+{% if peer.endpoint is defined %}
+Endpoint = {{ peer.endpoint }}
+{% endif %}
+PersistentKeepalive = 25
+{% endfor %}
+</file>
+
+<file path="docker-images/portfolio/_config.yaml">
+title: "Richard Pearsall — Test Deployment"
+theme: just-the-docs
+</file>
+
+<file path="docker-images/portfolio/Dockerfile">
+FROM jekyll/jekyll:4 AS builder
+WORKDIR /srv/jekyll
+COPY . .
+RUN bundle install && jekyll build
+
+FROM nginx:alpine
+COPY --from=builder /srv/jekyll/_site /usr/share/nginx/html
+</file>
+
+<file path="docker-images/portfolio/Gemfile">
+source "https://rubygems.org"
+gem "jekyll"
+gem "webrick"
+gem "just-the-docs"
+</file>
+
+<file path="docker-images/portfolio/index.md">
+---
+layout: default
+title: Home
+---
+
+# It works 🎉
+
+This page is being served from inside the K3s cluster —
+Cloudflare Tunnel → Traefik → a Calico-isolated pod.
+
+Full portfolio migration coming soon.
+</file>
+
+<file path="docs/infra-notes/local-dr-restore-testing-guide.md">
+# Testing the New etcd Restore Path Locally (Ubuntu, multipass, no prod contact)
+
+Goal: validate Path C (`restore.yml`) end-to-end without ever pointing it
+at production MinIO credentials, the production S3 bucket in write mode,
+or the live cluster. This mirrors the "scratch environment for risky
+experiments" principle already used elsewhere in this repo.
+
+## 1. VMs
+
+```bash
+sudo snap install multipass
+multipass launch --name k3s-test1 --cpus 2 --memory 4G --disk 20G jammy
+# optional, only needed if you also want to test multi-node rejoin
+# rather than just the restore mechanism itself:
+multipass launch --name k3s-test2 --cpus 2 --memory 4G --disk 20G jammy
+multipass launch --name k3s-test3 --cpus 2 --memory 4G --disk 20G jammy
+multipass list   # note the assigned IPs
+```
+
+3 × 4GB comfortably fits in 32GB alongside a MinIO container and your
+normal desktop use.
+
+## 2. Throwaway local MinIO — never prod
+
+```bash
+docker run -d --name minio-test \
+  -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=testuser \
+  -e MINIO_ROOT_PASSWORD=testpassword123 \
+  -v ~/minio-test-data:/data \
+  minio/minio server /data --console-address ":9001"
+```
+
+Find your Ubuntu host's real LAN IP (`ip addr` — something like
+`192.168.x.x` or your homelab's DHCP range) — the multipass VMs reach
+the host over its bridge, **not** `127.0.0.1`.
+
+## 3. Copy (read-only) a real snapshot in, from prod
+
+```bash
+# Read-only against prod — never write here
+mc alias set prod http://10.0.10.15:9000 <MINIO_ROOT_USER> <MINIO_ROOT_PASSWORD>
+mc ls prod/k3s-etcd-snapshots/
+mc cp prod/k3s-etcd-snapshots/<snapshot-name> ./snapshot-copy
+
+# Push into the local, disposable MinIO instead
+mc alias set testminio http://<ubuntu-host-lan-ip>:9000 testuser testpassword123
+mc mb testminio/k3s-etcd-snapshots
+mc cp ./snapshot-copy testminio/k3s-etcd-snapshots/<snapshot-name>
+```
+
+## 4. Scratch inventory + vars
+
+Create a throwaway `test-hosts.ini`:
+
+```ini
+[k3s_cluster]
+k3s-test1 ansible_host=<multipass-ip-1> k3s_node_index=1
+
+[k3s_cluster:vars]
+ansible_user=ubuntu
+```
+
+(Add test2/test3 with `k3s_node_index=2`/`3` if testing rejoin too.)
+
+Run against it with **dummy** credentials, never the real vault file:
+
+```bash
+ansible-playbook -i test-hosts.ini deploy_k3s.yml \
+  -e k3s_restore_from_snapshot=true \
+  -e k3s_restore_snapshot_name=<snapshot-name> \
+  -e vault_minio_root_user=testuser \
+  -e vault_minio_root_password=testpassword123 \
+  -e etcd_s3_endpoint=<ubuntu-host-lan-ip>:9000 \
+  -e vault_k3s_cluster_token=<any-throwaway-32-char-hex> \
+  -e k3s_api_server=<multipass-ip-1>
+```
+
+(`k3s_api_server` normally points at the kube-vip VIP; for a single-node
+mechanism test it's fine to point it at the node's own IP — kube-vip
+just won't have anywhere meaningful to float to with only one node up.)
+
+## 5. Verify
+
+```bash
+multipass exec k3s-test1 -- sudo kubectl get nodes -o wide
+multipass exec k3s-test1 -- sudo kubectl get pods -A
+```
+
+You should see Kubernetes objects reappear (Deployments, PVC
+definitions, Secrets) from whatever was in the snapshot. **PVCs will not
+actually bind** — there's no Ceph in this scratch environment — so don't
+read stuck PVC binding as a failure of this test; the thing being
+validated here is the restore mechanism and Ansible's handling of it
+(stale-state cleanup, the one-shot `--cluster-reset` flag removal, kube-vip
+manifest placement), not full workload health.
+
+## What this test does NOT cover
+
+The Ceph RBD stale-lock behavior flagged in `restore.yml` can only be
+observed against real Ceph, since there's no Ceph in this scratch setup.
+Treat a clean pass here as "the automation itself works," not as full
+proof the whole DR story is closed — the Ceph side still needs a
+deliberate, low-blast-radius test against real hardware before you'd
+call this fully proven.
+
+## Teardown
+
+```bash
+multipass delete k3s-test1 k3s-test2 k3s-test3 --purge
+docker rm -f minio-test
+rm -rf ~/minio-test-data
+```
+</file>
+
+<file path="docs/infra-notes/semaphore-dr-setup.md">
+# K3s Node Auto-DR — Semaphore & OPNsense Setup
+
+This covers everything the `alert_router` Ansible role and the
+`kube-prometheus-stack` ArgoCD Application can't set up for you — Semaphore's
+Task Templates are configured through its UI/DB, not GitOps, and the
+OPNsense firewall rule is a manual network change.
+
+---
+
+## 1. OPNsense — new firewall rule (do this first, nothing else works without it)
+
+Alertmanager (running in K3s, VLAN20) needs to reach the alert-router on
+pve1 (VLAN10). Your current policy only opens VLAN20→VLAN10 for MinIO on
+9000/9001 — everything else is dropped by default.
+
+Add:
+- **Source:** VLAN20 subnet (10.0.20.0/24) — or scope tighter to just
+  10.0.20.21–.23 if you want to match the existing MinIO rule's precision
+- **Destination:** 10.0.10.17
+- **Port:** TCP/8080
+- **Action:** Allow
+
+## 2. Semaphore — dedicated automation user + API token
+
+Don't reuse your personal `rich` login's token for this — a compromised or
+buggy alert-router shouldn't have your full admin session. Create a
+separate low-privilege Semaphore user scoped to just this project if your
+Semaphore version supports project-level roles, and generate its API token
+via:
+
+```
+curl -s -c /tmp/semaphore-cookie -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"auth": "automation-user", "password": "..."}' \
+  http://10.0.10.17:3000/api/auth/login
+
+curl -s -b /tmp/semaphore-cookie -X POST \
+  -H 'Content-Type: application/json' \
+  http://10.0.10.17:3000/api/user/tokens
+```
+
+Store the resulting token as `vault_semaphore_alert_router_token` in
+`ansible/group_vars/all/vault.yml`.
+
+## 3. Semaphore — two Task Templates
+
+**Template A: `k3s-node-rebuild` (Shell/Bash task type)**
+
+```bash
+cd /path/to/infra-homelab/terraform
+terraform init
+terraform apply -auto-approve \
+  -replace="module.k3s_node[\"${node_name}\"].proxmox_virtual_environment_vm.this"
+```
+
+Add a Survey Variable `node_name` (type: Enum — `pve2`, `pve3`, `pve4`).
+The alert-router supplies this via the `environment` field on the API call,
+so no manual input is needed at run time — the survey variable just gives
+Semaphore a name to bind the incoming value to.
+
+**Template B: `k3s-ansible-rejoin` (Ansible task type)**
+
+Points at `ansible/deploy_k3s.yml` (via the symlink, not
+`playbooks/deploy_k3s.yml` directly — same rule as manual runs). No survey
+variables needed: the existing VIP-reachability-probe join logic in
+`join.yml`/`bootstrap.yml` is already idempotent and rejoin-safe by design,
+which is exactly why this works as the second stage here with zero changes.
+
+Note both templates' numeric IDs (visible in the Semaphore UI URL when
+editing them) — these go into `semaphore_project_id`,
+`semaphore_terraform_replace_template_id`, and
+`semaphore_ansible_rejoin_template_id` in group_vars.
+
+## 4. Known limitation to test deliberately, not assume away
+
+`terraform apply -replace` destroys and recreates the VM. That's correct
+for a genuinely dead node. But if the "down" node was actually still
+alive — network partition rather than a crashed VM — replacing it means a
+new etcd member joins while the old member's identity may not have been
+cleanly removed from the cluster's member list first. Whether this
+resolves itself (etcd's own health checks evicting the stale member) or
+leaves cruft behind needs an actual test, not an assumption.
+
+## 5. Recommended test sequence, in order
+
+1. Manually `systemctl stop k3s` on **pve4** (lowest-resource node, least
+   consequential if something goes sideways) — don't touch the VM in
+   Proxmox yet, just the service. Confirm the `K3sNodeDown` alert fires
+   after 5 minutes and the alert-router logs pick it up.
+2. Check `journalctl -u alert-router -f` on pve1 during the test — confirm
+   it refuses to act if you (deliberately, for this test) also stop k3s on
+   a second node briefly, to prove the multi-node-down guardrail actually
+   works before you ever rely on the single-node path.
+3. Once single-node detection is confirmed, let a real single-node test
+   run end-to-end: stop the VM itself in Proxmox (not just the service) so
+   Terraform's `-replace` has something real to do, and watch both
+   Semaphore tasks complete and the node rejoin via `kubectl get nodes`.
+4. Only after a clean end-to-end pass should you consider this trusted for
+   an actual unattended failure.
+</file>
+
+<file path="terraform/modules/lxc/variables.tf">
+variable "hostname"       { type = string }
+variable "node_name"      { type = string }
+variable "vmid"           { type = number }
+variable "unprivileged"   { type = bool }
+variable "cores"          { type = number }
+variable "memory"         { type = number }
+variable "disk_size"      { type = number }
+variable "datastore_id"   { type = string }
+variable "ip"             { type = string }
+variable "gateway"        { type = string }
+variable "vlan_id"        { type = number }
+variable "ssh_public_key" { type = string }
+
+variable "template_file_id" {
+  type        = string
+  description = "e.g. proxmox_virtual_environment_download_file.<x>.id, or local:vztmpl/<filename>. Debian point-release template filenames change (13.0-1 -> 13.1-1 -> 13.1-2 already seen in 2025-2026) — verify via `pveam available -section system | grep debian` before applying if a download 404s."
+}
+
+variable "mount_nfs" {
+  description = "Whether this container needs the 'nfs' feature enabled so it can mount NAS exports from inside the guest OS (shared kernel — no separate NFS client VM needed)."
+  type        = bool
+  default     = false
+}
+
+variable "device_passthrough" {
+  description = <<-EOT
+    Optional host devices to pass through (e.g. iGPU render node for hardware
+    transcoding). Only meaningful for privileged containers in this setup —
+    unprivileged containers would need explicit idmap entries too, which we're
+    deliberately not using here (see Ansible/Terraform notes).
+
+    KNOWN PROVIDER GOTCHA (bpg/proxmox — GitHub issue #1721): device_passthrough
+    has historically only taken effect on a resource *update*, not on initial
+    create. If `terraform apply` creates the container but `/dev/dri` is empty
+    inside it, run `terraform apply` a second time (a no-op plan that still
+    pushes the update) or check whether this is fixed in your pinned provider
+    version before assuming something else is wrong.
+  EOT
+  type = list(object({
+    path = string
+    uid  = optional(number, 0)
+    gid  = optional(number, 0)
+    mode = optional(string, "0660")
+  }))
+  default = []
+}
+</file>
+
+<file path="terraform/modules/vm/variables.tf">
+variable "hostname"       { type = string }
+variable "node_name"      { type = string }
+variable "vmid"           { type = number }
+variable "ip"             { type = string }
+variable "gateway"        { type = string }
+variable "cores"          { type = number }
+variable "memory"         { type = number }
+variable "disk_size"      { type = number }
+variable "datastore_id"   { type = string }
+variable "ssh_public_key" { type = string }
+
+variable "image_url" {
+  type    = string
+  default = "https://cloud.debian.org/images/cloud/trixie/20260623-2518/debian-13-genericcloud-amd64-20260623-2518.qcow2"
+}
+variable "image_checksum" {
+  type    = string
+  default = "df2bd468b08566c0409a7982d6489d73499ad22f9a28646b538c2f21d08f15040a5e4737952ca209e9ad4488cd00793191791be9f135dee93082c86fcca3300c"
+}
+variable "vlan_id" {
+  type    = number
+  default = null
+}
+</file>
+
+<file path="terraform/backend.tf">
+terraform {
+  backend "s3" {
+    bucket   = "homelab-tf-state"
+    key      = "homelab/terraform.tfstate"
+    region = "main"
+    endpoints = {
+      s3 = "http://10.0.10.15:9000"   # MinIO on the NAS
+    }
+    use_path_style              = true
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    skip_region_validation      = true
+    skip_requesting_account_id  = true
+  }
+}
+</file>
+
+<file path="terraform/outputs.tf">
+output "k3s_node_ips" {
+  value = { for k, v in module.k3s_node : k => v.ip_address }
+}
+
+output "wordpress_site_ips" {
+  value = {
+    hantaweb      = module.wordpress_hantaweb.ip_address
+    petitsanglais = module.wordpress_petitsanglais.ip_address
+    hantaassos = module.wordpress_hantaassos.ip_address
+  }
+}
+</file>
+
+<file path="terraform/providers.tf">
+provider "proxmox" {
+  endpoint = var.proxmox_endpoint
+  api_token = var.proxmox_api_token
+  insecure  = true
+  # ADD THIS BLOCK:
+  ssh {
+#    agent    = true
+    username = "root"
+    private_key = base64decode(var.ssh_private_key_base64)
+  }
+}
+</file>
+
+<file path="README.md">
+# infra-homelab
+
+Personal homelab infrastructure managed as code.
+
+This repository is the **source of truth** for the physical and virtual infrastructure of my homelab.  
+It provisions and configures Proxmox hosts, K3s nodes, media LXCs, WordPress VMs, the NAS, and the automation control node using **Terraform** and **Ansible**.
+
+Related repositories:
+- [`k3s`](https://github.com/richpea1982/k3s) — GitOps manifests (ArgoCD) for workloads running on the K3s cluster
+- Portfolio site — [richpea1982.github.io](https://richpea1982.github.io)
+
+> **Status (August 2026)**  
+> The Proxmox cluster, networking, NAS, WordPress VMs and automation tooling are in daily use.  
+> The 3-node K3s cluster is bootstrapped and under active validation (HA control-plane, self-healing, GitOps sync).  
+> Stateless services are being migrated progressively.  
+> This README always reflects the **current intended architecture**. Older notes in `docs/infra-notes/` may lag behind and should not be treated as authoritative.
+
+---
+
+## High-level architecture
+
+Five physical machines:
+
+| Role                        | Host          | Purpose                                                                 |
+|-----------------------------|---------------|-------------------------------------------------------------------------|
+| Management / control plane  | **pve1**      | OPNsense (routing & firewall), Proxmox Backup Server, automation node (Semaphore + Ansible control) — deliberately kept **outside** the compute cluster |
+| Compute + Ceph              | **pve2, pve3, pve4** | Proxmox VE cluster with Ceph storage. Hosts K3s VMs, public WordPress VMs, and media LXCs |
+| Storage                     | **NAS** (bare metal) | Debian + ZFS RAID-Z2 (6 × 1 TB). NFS shares + MinIO (S3-compatible)     |
+
+### Network segmentation (VLANs)
+
+| VLAN | Subnet          | Purpose                              |
+|------|-----------------|--------------------------------------|
+| 10   | 10.0.10.0/24    | Management (Proxmox, PBS, automation, NAS) |
+| 20   | 10.0.20.0/24    | Internal services / K3s              |
+| 30   | 10.0.30.0/24    | Media (Jellyfin, etc.)               |
+| 40   | 10.0.40.0/24    | Public-facing web VMs (DMZ)          |
+| 50   | 10.0.50.0/24    | Untrusted / lab                      |
+
+Inbound public traffic uses **Cloudflare Tunnels** only (no ports opened on the firewall).  
+Internal admin access is via WireGuard / Tailscale overlay.
+
+### Key design choices
+
+- **K3s system disks on local-lvm** (not Ceph) — etcd is latency-sensitive; network storage would risk quorum issues.
+- **WordPress / stateful non-K3s workloads on Ceph** — allows live migration / HA restart on another Proxmox node.
+- **Media LXCs on local storage + NFS from NAS** — GPU passthrough + large media libraries stay off Ceph.
+- **Automation & backup control plane isolated on pve1** — avoids chicken-and-egg problems if the compute cluster fails.
+- **GitOps after bootstrap** — Ansible brings up the K3s cluster + ArgoCD; everything afterwards is declared in the `k3s` repository and reconciled by ArgoCD.
+
+---
+
+## Repository layout
+infra-homelab/
+├── terraform/                  # Proxmox VMs & LXCs
+│   ├── modules/
+│   │   ├── vm/
+│   │   └── lxc/
+│   ├── *.auto.tfvars           # Node definitions (k3s, media, WordPress)
+│   └── ...
+├── ansible/
+│   ├── playbooks/              # Entry-point playbooks
+│   ├── roles/                  # k3s_cluster, nas_setup, jellyfin, smartctl_exporter, automation_control, alert_router...
+│   ├── group_vars/
+│   └── hosts/
+├── docs/infra-notes/           # Working notes (may be outdated — see this README first)
+└── docker-images/portfolio/    # Test image for the portfolio site inside K3s
+
+
+---
+
+## Current inventory (as coded)
+
+### K3s nodes (VLAN 20, local-lvm)
+
+| Name       | Proxmox host | VMID | IP            | Cores | RAM   |
+|------------|--------------|------|---------------|-------|-------|
+| k3s-pve2   | pve2         | 2021 | 10.0.20.21/24 | 3     | 7 GB  |
+| k3s-pve3   | pve3         | 2022 | 10.0.20.22/24 | 3     | 7 GB  |
+| k3s-pve4   | pve4         | 2023 | 10.0.20.23/24 | 3     | 6 GB  |
+
+API endpoint (kube-vip): `10.0.20.20:6443`
+
+### Public WordPress VMs (VLAN 40, Ceph)
+
+| Name           | Proxmox host | VMID | IP            | Cores | RAM  |
+|----------------|--------------|------|---------------|-------|------|
+| hantaweb       | pve3         | 4011 | 10.0.40.11/24 | 3     | 4 GB |
+| petitsanglais  | pve4         | 4012 | 10.0.40.12/24 | 1     | 1 GB |
+| hanta-assos    | pve3         | 4013 | 10.0.40.13/24 | 1     | 1 GB |
+
+### Media LXC (VLAN 30)
+
+| Name     | Proxmox host | VMID | IP            | Notes                          |
+|----------|--------------|------|---------------|--------------------------------|
+| jellyfin | pve2         | 3010 | 10.0.30.10/24 | Privileged (GPU passthrough), media library on NFS from NAS |
+
+(Additional media / photo services are being validated.)
+
+### Management (pve1 + NAS)
+
+- OPNsense, PBS, automation control node (Semaphore) on pve1 (VLAN 10)
+- NAS: ZFS RAID-Z2 + MinIO + NFS exports (seafile, jellyfin, photoprism, backups, etc.)
+
+---
+
+## How the pieces fit together
+
+1. **Terraform** creates the VMs and LXCs on Proxmox (and downloads the LXC template).
+2. **Ansible** configures the OS, bootstraps the K3s cluster (HA etcd, kube-vip, Calico, ArgoCD), sets up the NAS (ZFS, NFS, MinIO), and deploys supporting roles (smartctl exporter, alert router, etc.).
+3. **ArgoCD** (from the `k3s` repo) takes over application deployment and continuous reconciliation (Traefik, CrowdSec, monitoring stack, Cloudflare tunnel, portfolio, Vaultwarden, Velero, etc.).
+
+Secrets are stored in **Ansible Vault** (`ansible/group_vars/all/vault.yml`).  
+Terraform state is stored on the NAS MinIO bucket.
+
+---
+
+## Quick start (high level)
+
+Detailed steps live in the role READMEs (especially `ansible/roles/k3s_cluster/K3S-BOOTSTRAP-README.md`).
+
+Typical sequence:
+
+```bash
+# 1. Provision infrastructure
+cd terraform
+terraform init
+terraform plan
+terraform apply
+
+# 2. Configure control node & NAS (from the automation host)
+cd ../ansible
+ansible-playbook -i hosts/hosts.ini playbooks/deploy_control_node.yml
+ansible-playbook -i hosts/hosts.ini nas_setup.yml
+
+# 3. Bootstrap K3s
+ansible-playbook -i hosts/hosts.ini deploy_k3s.yml
+# (follow the post-bootstrap steps in the K3s role README: deploy key, verify ArgoCD, etc.)
+
+```
+
+Design principles I follow
+
+Prefer declarative IaC over manual changes.
+Isolate the management plane from the compute plane.
+Keep latency-sensitive components (etcd) on local storage.
+Expose nothing publicly except through Cloudflare Tunnels + Traefik + CrowdSec.
+Document decisions and failures (see docs/ and the portfolio “lessons learned” page).
+
+This is a constrained home lab built on older hardware. The goal is to practice production-style patterns (IaC, GitOps, HA, observability, least-privilege networking) under real resource limits, not to claim enterprise scale.
+
+Licence / contact
+Personal project — no licence applied.
+Questions or feedback: see the portfolio site or open an issue.
+</file>
+
+<file path="ansible/playbooks/deploy_smartctl_exporter.yml">
+---
+- name: Deploy SMART metrics exporter to physical hosts (Proxmox + NAS)
+  hosts: physical_nodes
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: ../roles/smartctl_exporter
+</file>
+
+<file path="ansible/roles/k3s_cluster/tasks/restore.yml">
+---
+# Path C — restore this node's control plane from the most recent (or an
+# explicitly named) S3-hosted etcd snapshot. Only reached from
+# bootstrap.yml when k3s_restore_from_snapshot=true AND no live cluster
+# currently answers on the VIP (see the "Refuse to restore" safety-check
+# task in bootstrap.yml). This path is destructive by design — it wipes
+# this node's local etcd member — and must never run against a cluster
+# that's still up.
+
+- name: Defensive cleanup of any prior k3s state before restoring
+  ansible.builtin.include_tasks: cleanup-stale-state.yml
+
+- name: Ensure boto3/botocore are available for snapshot listing
+  ansible.builtin.pip:
+    name:
+      - boto3
+      - botocore
+    state: present
+    extra_args: "--break-system-packages --ignore-installed"
+
+- name: List objects in the etcd snapshot bucket (needed to resolve "latest")
+  amazon.aws.s3_object_info:
+    bucket_name: "{{ etcd_s3_bucket }}"
+    endpoint_url: "http://{{ etcd_s3_endpoint }}"
+    access_key: "{{ vault_minio_root_user }}"
+    secret_key: "{{ vault_minio_root_password }}"
+  register: etcd_snapshot_objects
+  when: k3s_restore_snapshot_name == "latest"
+
+- name: Resolve "latest" to the newest matching snapshot object key
+  ansible.builtin.set_fact:
+    k3s_resolved_snapshot_name: >-
+      {{
+        (etcd_snapshot_objects.s3_keys
+         | default(etcd_snapshot_objects.objects | default([]) | map(attribute='key') | list)
+         | select('search', '^etcd-snapshot-')
+         | list
+         | sort
+         | last)
+      }}
+  when: k3s_restore_snapshot_name == "latest"
+
+- name: Use the explicitly-provided snapshot name when one was given
+  ansible.builtin.set_fact:
+    k3s_resolved_snapshot_name: "{{ k3s_restore_snapshot_name }}"
+  when: k3s_restore_snapshot_name != "latest"
+
+- name: Fail loudly if no snapshot could be resolved
+  ansible.builtin.fail:
+    msg: >-
+      Could not resolve a snapshot to restore from bucket
+      {{ etcd_s3_bucket }}. Check the bucket actually contains objects
+      matching 'etcd-snapshot-*'.
+  when: >
+    k3s_resolved_snapshot_name is not defined or
+    (k3s_resolved_snapshot_name | length) == 0
+
+- name: Report which snapshot will be restored
+  ansible.builtin.debug:
+    msg: "Restoring etcd on {{ inventory_hostname }} from snapshot: {{ k3s_resolved_snapshot_name }}"
+
+- name: Restore etcd from the resolved S3 snapshot and bring the control plane up
+  ansible.builtin.shell: >
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
+    --cluster-reset
+    --cluster-reset-restore-path="{{ k3s_resolved_snapshot_name }}"
+    --token "{{ vault_k3s_cluster_token }}"
+    --flannel-backend=none
+    --disable traefik
+    --tls-san "{{ k3s_api_server }}"
+    --etcd-s3
+    --etcd-s3-endpoint "{{ etcd_s3_endpoint }}"
+    --etcd-s3-bucket "{{ etcd_s3_bucket }}"
+    --etcd-s3-access-key "{{ vault_minio_root_user }}"
+    --etcd-s3-secret-key "{{ vault_minio_root_password }}"
+    --etcd-s3-insecure=true
+  register: restore_result
+
+- name: Remove the one-shot cluster-reset flag from the persisted service env
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/system/k3s.service.env
+    regexp: '^K3S_CLUSTER_RESET='
+    state: absent
+  ignore_errors: true
+
+- name: Reload systemd and ensure k3s is running cleanly post-restore
+  ansible.builtin.systemd:
+    name: k3s
+    state: restarted
+    enabled: true
+    daemon_reload: true
+
+- name: Wait for local API server port to accept connections
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ k3s_api_port }}"
+    delay: 5
+    timeout: 90
+
+- name: Record cluster-init marker so a later re-run doesn't restore again
+  ansible.builtin.file:
+    path: /etc/rancher/k3s/cluster-initialized
+    state: touch
+    mode: '0600'
+
+- name: Ensure K3s manifests directory exists for static manifests
+  ansible.builtin.file:
+    path: /var/lib/rancher/k3s/server/manifests
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Apply kube-vip manifest (this node is now the control-plane identity)
+  ansible.builtin.copy:
+    src: files/kube-vip.yaml
+    dest: /var/lib/rancher/k3s/server/manifests/kube-vip.yaml
+    owner: root
+    mode: '0644'
+</file>
+
+<file path="ansible/roles/nas_setup/templates/exports.j2">
+# Generated by Ansible - Homelab NFS Storage Exports
+{% for dataset in nas_datasets -%}
+{%   if not dataset.local_only | default(false) -%}
+{%     if dataset.exports is defined -%}
+{{ nas_mount_point_base }}/{{ dataset.name }}{% for export in dataset.exports %} {{ export.subnet }}({{ export.options }}){% endfor %}
+
+{%     else -%}
+{{ nas_mount_point_base }}/{{ dataset.name }} 10.0.10.0/24(rw,async,no_subtree_check,no_root_squash)
+{%     endif -%}
+{%   endif -%}
+{% endfor -%}
+</file>
+
+<file path="terraform/modules/lxc/outputs.tf">
+output "ip_address" {
+  value = var.ip
+}
+
+output "vm_id" {
+  value = proxmox_virtual_environment_container.this.vm_id
+}
+
+output "mac_address" {
+  value = proxmox_virtual_environment_container.this.network_interface[0].mac_address
+}
+</file>
+
+<file path="terraform/modules/vm/versions.tf">
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    proxmox = {
+      source  = "bpg/proxmox"
+      version = "0.111.1"
+    }
+  }
+}
+</file>
+
+<file path="terraform/media-lxc.auto.tfvars">
+media_lxc = {
+  jellyfin = {
+    hostname     = "jellyfin"
+    node_name    = "pve2"
+    vmid         = 3010
+    unprivileged = false # privileged — WireGuard/Tailscale-only exposure, no
+                          # public attack surface, and it removes the idmap
+                          # GID-mapping step for the iGPU render group.
+    cores     = 3
+    memory    = 6144
+    disk_size = 20 # OS only — media library lives on NFS from the NAS, not here
+    datastore = "local-lvm"
+    ip        = "10.0.30.10/24"
+    gateway   = "10.0.30.1"
+    vlan_id   = 30
+    device_passthrough = [
+      { path = "/dev/dri/card1" },
+      { path = "/dev/dri/renderD128" }
+    ]
+  }
+  # Photoprism moved to K3s (gitops/apps/photoprism.yaml in the k3s repo) —
+  # it never needed pve2-specific GPU pinning, only Jellyfin did. Removed
+  # from here rather than left as a second, now-pointless static LXC.
+}
+</file>
+
+<file path="terraform/versions.tf">
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    proxmox = {
+      source  = "bpg/proxmox"
+      version = "0.111.1"
+    }
+  }
+}
+</file>
+
+<file path="terraform/wordpress-sites.auto.tfvars">
+wordpress_sites = {
+  hantaweb = {
+    node_name = "pve3"
+    vmid      = 4011
+    ip        = "10.0.40.11/24"
+    gateway   = "10.0.40.1"
+    vlan_id   = 40
+    cores     = 3
+    memory    = 4096
+    disk_size = 40
+    datastore = "ceph-storage"
+  }
+  petitsanglais = {
+    node_name = "pve4"
+    vmid      = 4012
+    ip        = "10.0.40.12/24"
+    gateway   = "10.0.40.1"
+    vlan_id   = 40
+    cores     = 1
+    memory    = 1024
+    disk_size = 20
+    datastore = "ceph-storage"
+  }
+  hanta-assos = {
+    node_name = "pve3"
+    vmid      = 4013
+    ip        = "10.0.40.13/24"
+    gateway   = "10.0.40.1"
+    vlan_id   = 40
+    cores     = 1
+    memory    = 1024
+    disk_size = 20
+    datastore = "ceph-storage"
+  }
+}
+</file>
+
+<file path="ansible/roles/jellyfin/handlers/main.yml">
+---
+# handlers/main.yml
+
+- name: restart jellyfin
+  ansible.builtin.systemd:
+    name: jellyfin
+    state: restarted
+    daemon_reload: true
+</file>
+
+<file path="ansible/roles/k3s_cluster/defaults/main.yml">
+---
+# Runtime working configurations
+k3s_config_dir: "/etc/rancher/k3s"
+k3s_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+
+# etcd snapshot to S3 (MinIO on the NAS)
+etcd_s3_config_secret: "k3s-etcd-snapshot-s3-config"
+etcd_snapshot_schedule_cron: "0 */6 * * *"
+etcd_snapshot_retention: 5
+etcd_s3_endpoint: "10.0.10.15:9000"
+etcd_s3_bucket: "k3s-etcd-snapshots"
+
+# --- Disaster recovery: restore from an S3-hosted etcd snapshot ---
+# Opt-in only — never triggered automatically by a normal playbook run.
+# Pass explicitly, e.g.:
+#   ansible-playbook -i hosts/hosts.ini deploy_k3s.yml \
+#     -e k3s_restore_from_snapshot=true \
+#     -e k3s_restore_snapshot_name=latest
+# ...against a genuinely dead cluster (full quorum loss — this is NOT the
+# single-node-failure path, which is already handled by the existing VIP
+# probe / rejoin logic in bootstrap.yml and join.yml).
+# See tasks/restore.yml for the full flow and its safety checks.
+k3s_restore_from_snapshot: false
+
+# "latest" resolves dynamically to the newest object in the S3 bucket
+# matching the "etcd-snapshot-" prefix. Pass an explicit snapshot object
+# name instead to restore a specific point in time rather than the most
+# recent one.
+k3s_restore_snapshot_name: "latest"
+</file>
+
+<file path="ansible/roles/k3s_cluster/files/kube-vip.yaml">
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-vip
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:kube-vip-role
+rules:
+  - apiGroups: [""]
+    resources: ["services", "services/status", "nodes", "endpoints"]
+    verbs: ["list", "get", "watch", "update"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["list", "get", "watch", "update", "create"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["list", "get", "watch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:kube-vip-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kube-vip-role
+subjects:
+  - kind: ServiceAccount
+    name: kube-vip
+    namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kube-vip
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-vip
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kube-vip
+    spec:
+      serviceAccountName: kube-vip
+      hostNetwork: true
+      containers:
+        - name: kube-vip
+          image: ghcr.io/kube-vip/kube-vip:v1.2.0
+          imagePullPolicy: IfNotPresent
+          args: ["manager"]
+          env:
+            - name: vip_arp
+              value: "true"
+            - name: port
+              value: "6443"
+            - name: vip_interface
+              value: "eth0"
+            - name: vip_cidr
+              value: "24"
+            - name: cp_enable
+              value: "true"
+            - name: cp_namespace
+              value: "kube-system"
+            - name: vip_ddns
+              value: "false"
+            - name: svc_enable
+              value: "true"
+            - name: svc_election
+              value: "true"
+            - name: svc_leasename
+              value: "plndr-svcs-lock"
+            - name: vip_leaderelection
+              value: "true"
+            - name: vip_leaseduration
+              value: "15"
+            - name: vip_renewdeadline
+              value: "10"
+            - name: vip_retryperiod
+              value: "2"
+            - name: address
+              value: "10.0.20.20"
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+      nodeSelector:
+        node-role.kubernetes.io/master: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+</file>
+
+<file path="ansible/roles/k3s_cluster/tasks/main.yml">
+---
+- name: Execute System Pre-requisites & OS Hardening
+  include_tasks: prereqs.yml
+
+- name: Bootstrap Initial Control Plane Node 1
+  include_tasks: bootstrap.yml
+  when: k3s_node_index | int == 1
+
+- name: Deploy Cluster Native Network, Ingress Security Tools
+  include_tasks: apps.yml
+  when: k3s_node_index | int == 1
+
+- name: Join Secondary Control Planes Nodes 2 & 3
+  include_tasks: join.yml
+  when: k3s_node_index | int > 1
+
+# ... (existing K3s installation tasks above) ...
+
+- name: Apply user convenience settings
+  ansible.builtin.include_tasks: user-comforts.yml
+</file>
+
+<file path="ansible/roles/k3s_cluster/tasks/prereqs.yml">
+---
+- name: Ensure apt cache is up to date (Debian/Ubuntu)
+  apt:
+    update_cache: yes
+  when: ansible_facts['pkg_mgr'] == 'apt'
+
+- name: Install arptables and ebtables packages if available (Debian/Ubuntu)
+  apt:
+    name:
+      - arptables
+      - ebtables
+      - iptables
+      - iproute2
+      - nfs-common
+    state: present
+  when: ansible_facts['pkg_mgr'] == 'apt'
+
+- name: Check for legacy binary for each tool
+  stat:
+    path: "/usr/sbin/{{ item }}-legacy"
+  register: legacy_stat
+  loop:
+    - iptables
+    - ip6tables
+    - arptables
+    - ebtables
+  loop_control:
+    label: "{{ item }}"
+
+- name: Set alternatives for tools that have a legacy binary present
+  community.general.alternatives:
+    name: "{{ item.item }}"
+    path: "/usr/sbin/{{ item.item }}-legacy"
+  loop: "{{ legacy_stat.results }}"
+  when: item.stat.exists
+
+- name: Warn when a legacy binary is missing (informational)
+  debug:
+    msg: "Legacy binary /usr/sbin/{{ item.item }}-legacy not found; skipping alternatives for {{ item.item }}"
+  loop: "{{ legacy_stat.results }}"
+  when: not item.stat.exists
+
+- name: Ensure /etc/rancher/k3s directory exists
+  file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Ensure standard upstream nameserver fallback is declared
+  copy:
+    dest: /etc/rancher/k3s/resolv.conf
+    content: |
+      nameserver 1.1.1.1
+      nameserver 8.8.8.8
+    mode: '0644'
+    owner: root
+    group: root
+
+- name: Turn off swap space completely for current session
+  command: swapoff -a
+  changed_when: false
+
+- name: Disable swap in fstab persistently across reboots
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\sswap\s.*)$'
+    replace: '#\1'
+</file>
+
+<file path="ansible/roles/nas_setup/defaults/main.yml">
+---
+# Packages to install
+nas_packages:
+  - samba
+  - samba-common-bin
+  - nfs-kernel-server
+  - zfsutils-linux
+  - python3-boto3
+# ZFS Configuration
+nas_pool_name: "storage_pool"
+nas_mount_point_base: "/mnt/storage"
+
+zfs_raidz2_disks:
+  - /dev/disk/by-id/ata-WDC_WD10JPVX-75JC3T0_WXK1E63ZHKV7
+  - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_37JOPUHTT
+  - /dev/disk/by-id/ata-ST1000LM024_HN-M101MBB_S32XJ9GGC10989
+  - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_Y4MLP8TYT
+  - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_Y6SGCKJFT
+  - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_865XTG96T
+
+# Grouping datasets with their optimized properties 
+# Note: minio and seafile are marked as local_only: true so NFS skips them
+nas_datasets:
+  - name: "seafile"
+    recordsize: "128k"
+    local_only: true
+  - name: "photoprism"
+    recordsize: "128k"
+  - name: "minio"
+    recordsize: "128k"
+    local_only: true
+  - name: "pbs-backups"
+    recordsize: "1m"
+  - name: "pve1-backups"
+    recordsize: "1m"
+  - name: "k3s-backups"
+    recordsize: "1m"
+  - name: "jellyfin"
+    recordsize: "1m"
+    exports:
+      - subnet: "10.0.10.0/24"
+        options: "rw,async,no_subtree_check,no_root_squash,crossmnt"
+      - subnet: "10.0.30.0/24"
+        options: "rw,sync,no_subtree_check,no_root_squash,insecure,crossmnt"
+  - name: "jellyfin/dvds"
+    recordsize: "1m"
+    exports:
+      - subnet: "10.0.10.0/24"
+        options: "rw,async,no_subtree_check,no_root_squash"
+      - subnet: "10.0.30.0/24"
+        options: "rw,sync,no_subtree_check,no_root_squash,insecure"
+  - name: "jellyfin/music"
+    recordsize: "256k"
+    exports:
+      - subnet: "10.0.10.0/24"
+        options: "rw,async,no_subtree_check,no_root_squash"
+      - subnet: "10.0.30.0/24"
+        options: "rw,sync,no_subtree_check,no_root_squash,insecure"
+
+# MinIO Configuration
+minio_download_url: "https://dl.min.io/server/minio/release/linux-amd64/minio"
+minio_version: "RELEASE.2026-07-03T16-39-21Z"
+minio_user: "minio"
+minio_group: "minio"
+</file>
+
+<file path="ansible/roles/wg_relay/defaults/main.yml">
+---
+wg_relay_interface: wg0
+wg_relay_port: 51820
+wg_relay_address: "10.100.0.1/24"
+wg_relay_config_dir: /etc/wireguard
+wg_relay_private_key_path: "{{ wg_relay_config_dir }}/privatekey"
+wg_relay_public_key_path: "{{ wg_relay_config_dir }}/publickey"
+
+# Peers dial in via this list. Left empty for the first run — the
+# interface comes up fine with zero peers, it just isn't routing
+# anywhere yet. Add OPNsense here once its own WireGuard side exists
+# and you have its public key (see WG-RELAY-README.md).
+# Example entry:
+#   - name: opnsense
+#     public_key: "<opnsense_wg_public_key>"
+#     allowed_ips: "10.100.0.2/32,10.0.0.0/16"
+wg_relay_peers:
+  - name: opnsense
+    public_key: "F63bBb1yZwsIAvIWOH7yV8IUyE/Mb4i8Yr9gXTjMDmM="
+    allowed_ips: "10.100.0.2/32, 10.0.0.0/16"  # Add home subnets (e.g., 10.0.0.0/16) here if routing internal traffic through the relay
+</file>
+
+<file path="terraform/modules/lxc/versions.tf">
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    proxmox = {
+      source  = "bpg/proxmox"
+      version = "0.111.1" # NOTE: device_passthrough support and its exact
+                          # schema have moved fast in this provider (it only
+                          # landed after Proxmox VE 8.2 added the underlying
+                          # API). Confirm 0.94.0 actually documents
+                          # device_passthrough before applying — if not,
+                          # this module needs a version bump, which is a
+                          # root-level decision since it's pinned repo-wide
+                          # in your existing terraform/versions.tf.
+    }
+  }
+}
+</file>
+
+<file path="terraform/modules/vm/main.tf">
+# 1. This resource handles downloading the Debian 13 Cloud Image to Proxmox
+resource "proxmox_virtual_environment_download_file" "debian_cloud" {
+  content_type       = "iso"
+  datastore_id       = "local"
+  node_name          = var.node_name
+  url                = var.image_url
+  checksum           = var.image_checksum
+  checksum_algorithm = "sha512"
+
+  file_name    = "debian-13-${var.hostname}.img" 
+}
+# 2. This resource generates the Cloud-Init script text on the fly
+resource "proxmox_virtual_environment_file" "vendor_data" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = var.node_name
+
+  source_raw {
+    data = <<-EOF
+    #cloud-config
+    package_update: true
+    packages:
+      - qemu-guest-agent
+    runcmd:
+      - systemctl start qemu-guest-agent
+      - systemctl enable qemu-guest-agent
+    EOF
+    
+    file_name = "vendor-data-${var.hostname}.yaml"
+  }
+}
+
+# 3. This resource provisions the VM and ties everything together
+resource "proxmox_virtual_environment_vm" "this" {
+  name      = var.hostname
+  node_name = var.node_name
+  vm_id     = var.vmid
+
+  reboot_after_update = true
+
+  cpu {
+    cores = var.cores
+    type  = "host"
+  }
+
+  memory {
+    dedicated = var.memory
+  }
+
+# ONLY ONE disk block: Just your main Debian OS drive!
+  disk {
+    datastore_id = var.datastore_id   
+    file_id      = proxmox_virtual_environment_download_file.debian_cloud.id
+    interface    = "scsi0"
+    size         = var.disk_size
+  }
+
+  network_device {
+    bridge = "vmbr0"
+    vlan_id = var.vlan_id
+  }
+
+  agent {
+    enabled = true
+  }
+
+  # THIS block manages the Cloud-Init hardware + provisioning automatically
+  initialization {
+    datastore_id = var.datastore_id  # <--- Tells Proxmox where to generate the cloudinit drive
+    interface    = "ide2"            # <--- Attaches it to the traditional IDE CD-ROM slot
+
+    ip_config {
+      ipv4 {
+        address = var.ip
+        gateway = var.gateway
+      }
+    }
+    
+    user_account {
+      username = "rich"
+      keys     = [var.ssh_public_key] 
+    }
+
+    # Attach the cloud-init snippet to install the guest agent
+    vendor_data_file_id = proxmox_virtual_environment_file.vendor_data.id
+  }
+}
+</file>
+
+<file path="ansible/group_vars/k3s_cluster.yml">
+---
+k3s_version: "v1.31.5+k3s1"
+k3s_api_server: "10.0.20.20"
+k3s_api_port: 6443
+
+# Network Overlays
+k3s_cluster_cidr: "10.42.0.0/16"
+
+# Helm Chart Tracking Versions — Ansible-managed bootstrap components only.
+# Everything past this point (Traefik, CrowdSec, future workloads) is
+# version-pinned inside k3s/gitops/apps/*.yaml instead, and reconciled by
+# ArgoCD, not Ansible.
+calico_helm_version: "3.32.0"
+argocd_helm_version: "7.7.11"
+
+# GitOps repo — ArgoCD's root Application watches this path for everything
+# deployed after bootstrap.
+gitops_repo_url: "git@github.com:richpea1982/k3s.git"
+gitops_repo_path: "gitops/apps"
+gitops_repo_revision: "main"
+</file>
+
+<file path="terraform/modules/lxc/main.tf">
+resource "proxmox_virtual_environment_container" "this" {
+  node_name     = var.node_name
+  vm_id         = var.vmid
+  unprivileged  = var.unprivileged
+  started       = true
+  start_on_boot = true
+
+  cpu {
+    cores = var.cores
+  }
+
+  memory {
+    dedicated = var.memory
+  }
+
+  disk {
+    datastore_id = var.datastore_id
+    size         = var.disk_size
+  }
+
+  network_interface {
+    name    = "eth0"
+    bridge  = "vmbr0"
+    vlan_id = var.vlan_id
+  }
+
+  initialization {
+    hostname = var.hostname
+
+    ip_config {
+      ipv4 {
+        address = var.ip
+        gateway = var.gateway
+      }
+    }
+
+    user_account {
+      keys = [var.ssh_public_key]
+    }
+  }
+
+  operating_system {
+    template_file_id = var.template_file_id
+    type             = "debian"
+  }
+}
+</file>
+
+<file path="terraform/k3s-nodes.auto.tfvars">
+# Replace the memory values in your existing terraform/k3s-nodes.auto.tfvars
+# with these. +1GB on pve2/pve3, +1GB on pve4 (kept smaller since pve4 has
+# only 12GB total host RAM vs 16GB on pve2/pve3 — less headroom over
+# Proxmox+Ceph overhead).
+#
+# VERIFY BEFORE APPLYING: this assumes current free RAM on each host after
+# existing VMs/LXCs (including the now-departed Photoprism LXC's 6GB
+# reservation on pve2, which is fully freed by this change) and the Ceph
+# OSD daemon's own memory footprint (~1GB/OSD is typical for HDD-backed
+# OSDs at this scale, but confirm via `free -h` per host before applying,
+# not just this comment's assumption).
+
+k3s_nodes = {
+  pve2 = {
+    node_name = "pve2",
+    vmid      = 2021,
+    ip        = "10.0.20.21/24",
+    gateway   = "10.0.20.1",
+    vlan_id   = 20
+    cores     = 3,
+    memory    = 7168, # was 6144
+    disk_size = 40,
+    datastore = "local-lvm"
+  }
+  pve3 = {
+    node_name = "pve3",
+    vmid      = 2022,
+    ip        = "10.0.20.22/24",
+    gateway   = "10.0.20.1",
+    vlan_id   = 20
+    cores     = 3,
+    memory    = 7168, # was 6144
+    disk_size = 40,
+    datastore = "local-lvm"
+  }
+  pve4 = {
+    node_name = "pve4",
+    vmid      = 2023,
+    ip        = "10.0.20.23/24",
+    gateway   = "10.0.20.1",
+    vlan_id   = 20
+    cores     = 3,
+    memory    = 7168, # was 5120
+    disk_size = 40,
+    datastore = "local-lvm"
+  }
+}
+</file>
+
+<file path="terraform/variables.tf">
+variable "proxmox_endpoint" {
+  type = string
+}
+
+variable "proxmox_api_token" {
+  type      = string
+  sensitive = true
+}
+
+variable "k3s_nodes" {
+  description = "K3s cluster nodes (embedded etcd, all schedulable)"
+  type = map(object({
+    node_name = string   # target Proxmox host: pve2/pve3/pve4
+    vmid      = number
+    ip        = string   # CIDR, e.g. 10.0.10.20/24
+    gateway   = string
+    vlan_id   = number
+    cores     = number
+    memory    = number
+    disk_size = number
+    datastore = string   # local storage only — never Ceph (etcd fsync sensitivity)
+  }))
+}
+
+variable "wordpress_sites" {
+  description = "WordPress sites — full VMs, not LXCs (highest-risk workload gets hypervisor isolation)"
+  type = map(object({
+    node_name = string
+    vmid      = number
+    ip        = string
+    gateway   = string
+    vlan_id   = number
+    cores     = number
+    memory    = number
+    disk_size = number
+    datastore = string
+  }))
+}
+# ssh public key injection
+variable "ssh_public_key" {
+  type    = string
+  default = null
+}
+variable "ssh_private_key_base64" {
+  type        = string
+  description = "Base64 encoded private SSH key passed from Semaphore secrets"
+  sensitive   = true
+}
+# ==============================================================================
+# Append this block to your existing terraform/variables.tf
+# ==============================================================================
+
+variable "media_lxc" {
+  description = "Media-serving LXCs on pve2 — Jellyfin (privileged, iGPU passthrough) and Photoprism (unprivileged, no passthrough)."
+  type = map(object({
+    hostname     = string
+    node_name    = string
+    vmid         = number
+    unprivileged = bool
+    cores        = number
+    memory       = number
+    disk_size    = number
+    datastore    = string
+    ip           = string
+    gateway      = string
+    vlan_id      = number
+    device_passthrough = list(object({
+      path = string
+    }))
+  }))
+}
+</file>
+
+<file path="ansible/roles/k3s_cluster/tasks/storageclass-retain.yml">
+---
+- name: Delete default local-path StorageClass
+  kubernetes.core.k8s:
+    state: absent
+    kind: StorageClass
+    name: local-path
+  ignore_errors: true
+
+- name: Apply retained StorageClass
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: local-path
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "true"
+      provisioner: rancher.io/local-path
+      volumeBindingMode: WaitForFirstConsumer
+      reclaimPolicy: Retain
+</file>
+
+<file path="ansible/playbooks/deploy_k3s.yml">
+---
+- name: Refresh SSH host keys for K3s nodes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Remove stale known_hosts entries for both names and IPs
+      ansible.builtin.command: >
+         ssh-keygen -f /root/.ssh/known_hosts -R {{ item }}
+      loop: "{{ groups['k3s_cluster'] + [hostvars[groups['k3s_cluster'][0]].ansible_host, hostvars[groups['k3s_cluster'][1]].ansible_host, hostvars[groups['k3s_cluster'][2]].ansible_host] }}"
+      ignore_errors: true
+      changed_when: true
+
+    - name: Scan and trust the current SSH host key for each K3s node IP
+      ansible.builtin.command: "ssh-keyscan -T 10 {{ hostvars[item]['ansible_host'] }}"
+      with_items: "{{ groups['k3s_cluster'] }}"
+
+- name: Orchestrate HA K3s Cluster Provisioning
+  hosts: k3s_cluster
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/vault.yml
+
+  roles:
+    - role: ../roles/k3s_cluster
+</file>
+
+<file path="ansible/roles/k3s_cluster/tasks/join.yml">
+---
+- name: Check if K3s service is already active on this node
+  ansible.builtin.systemd:
+    name: k3s
+  register: k3s_local_status
+  failed_when: false
+
+- name: Set fact — is K3s already running here?
+  ansible.builtin.set_fact:
+    k3s_already_running: "{{ k3s_local_status.status is defined and k3s_local_status.status.ActiveState == 'active' }}"
+
+# Defensive cleanup before attempting a (re)join — closes the same gap
+# found during the 2026-08 DR drill (stale TLS certs / db state from a
+# previous node identity blocking a clean rejoin, discovered on nodes 2
+# and 3 as well as the initial restore node). No-op on a genuinely fresh
+# Terraform-provisioned VM.
+- name: Defensive cleanup of any prior k3s state before joining
+  ansible.builtin.include_tasks: cleanup-stale-state.yml
+  when: not k3s_already_running
+
+- name: Wait for the VIP to be reachable before attempting to join
+  ansible.builtin.uri:
+    url: "https://{{ k3s_api_server }}:{{ k3s_api_port }}/readyz"
+    validate_certs: false
+    status_code: [200, 401, 403]
+    timeout: 5
+  register: vip_probe
+  retries: 30
+  delay: 10
+  until: (vip_probe.status | default(0)) in [200, 401, 403]
+  when: not k3s_already_running
+
+- name: Join existing cluster via the VIP
+  ansible.builtin.shell: >
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
+    --server "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
+    --token "{{ vault_k3s_cluster_token }}"
+    --flannel-backend=none
+    --disable traefik
+    --tls-san "{{ k3s_api_server }}"
+    --etcd-s3
+    --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
+    --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
+    --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
+  when: not k3s_already_running
+
+- name: Ensure secondary k3s service engines are verified running
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    enabled: true
+</file>
+
+<file path="ansible/group_vars/all/vault.yml">
+$ANSIBLE_VAULT;1.1;AES256
+38313237353565626336393561343537353331313533353739646462376266653265383233643336
+6262353066663932653834323464356635366531376161310a303234386365303365346131616230
+32326533323436663132663835633636623865623562366261386261613765653038373232313639
+3462343835333737370a643339366530666338326139333861323339373662373832323936376333
+34316263373536656566656431656134346161383133356432633338313663623837333631303262
+63383763636230616139613662393431333666336162363265613161343661333531666531303661
+36383336636364366634306662666136646664636564333661616565666433613663653631323335
+62653334323135643634303133646635383838363935386565643439343766623164633163653662
+35353335383663666636646434363437383762333832663235623262306231303933356632346136
+35653139646663323939613934313561303438383130386563623632636430626536613561323731
+66376432663331313638376434626262663737646138343537393635346466653535626338616638
+66386637326261643861306265633964643332306235373433323434333736366131643361656431
+34316132346662353938323336363066623266383461613835343830306333626336376162336366
+35633465333536393762616533623232646664346366336433613565306330303336663338366533
+33313037653933653663393236383039333030376330653566633966376166663363653963313461
+38333931633738613631653039353136653739383635306462663833666164393666326633666362
+37393031343530346330393232316462653162393465663231663964623335666330623837336331
+30356532396432623337363136343136306135373431626361303636333538333364396231643530
+36303634653664626439626263353334313936643261396561326235313635346363653833393038
+61333133383031363564313135643234636334373037646137306566616562643963326539616566
+65373365303066306564306332333339343064613731666536303162383431333436363463383339
+37633038613639393762363664383763306236356664343038653332353166646433326165306665
+64373136363364313537363237386230303731653166303239356538383633326265653535623262
+31303564376164366636623762643738333431666631623966353830383165386664356631616336
+35333433633431336533303035656433626561373233303138333865386231653036643661363162
+62363933316165343466356438313664663434373938373731323166656339393036643439316335
+30383064643535376635313631373030663936336163366230393332636330323831376532653263
+33363162643636653738396364643035633230343162646632313531613539396434386163653532
+61343566316139373162313334656333613734353061333035316261396336656337646233656663
+31663361633535663364396330303163303265626433613033343664616130303231653065653333
+63396261363530326165313138383662643461393438356235333163353963626266636434353536
+37376133303331313264643534333637323838626632346136613730393034326638326462613631
+66623863623833653161313833333736623336336337363931346164656632643236323361356366
+63643061623664383463643135316534613137653036636231353563343664353632343232356263
+66656666366365646265393264366466323263333431646235656530396439323338306265326231
+39313162626439656235313061613766326436323963653938353939613165336163333438373634
+33393461363130666161613566386136303939613233623235656664326437656333336438333465
+33356635656437666661376434633932656434313066633730623234633565313130623839653164
+36623764303632623536366363613134316239636531626235643532353030643430396630333133
+61346536646662303964373732313935343361346266343139303137383334363435646464666330
+33666433666230393362336364376462666165383133306462303139386435656562313638333036
+62343532393434346463623761333062643631313863343839663232373939613930356333613236
+38663461363233383934383461303236643462633433353064626233316331303732303031313064
+65346365303462653331343064636363326136636165646463316164623236323237626532313363
+66386238396435643661316236353161616666303865383165393232653139343432376335633234
+31306639356361366332643366366362306535633766313736626138623830396537393630666663
+35653964333363396137613262333736396266363532383833366162366531366435313634396366
+32303230643735386332376436386137343230656162396132613937653436363639633563386531
+37626438636238626236363334656163636465613632323635653131326132633535343036643866
+31656439613034376464383734616666666532663136653164396438386133356132623961646664
+36363063613962336366386133633463393436333936633563653262373136383931316131376237
+65313165353666363361313730343734333431343739303136373162343031663539326131653433
+62363762373438666138393465636130363531663563323634613638313438376338343363653439
+30396461316137626530336639343734346164383939383438316639396663333733333739646363
+61363130613064366133653031333566653164376366343263376533326131363861666165303735
+36663565386533333661303836383634383936313839336534323165386663323332646362333938
+37626361633337633639646266653831626333356631636534656132393135666431626366353230
+33616534336165653633666164313063656666633564303134623964383465393038353330316539
+34323863356338633433373239313836623737636235306336363863663135653837343433623532
+64633438333065363066393034656266326264623534303637663466343931313566383739356537
+64633334613836383439326364356536643938613938336663353936303033326335303662626235
+32623034663732663161323336373166343732636234656164316231636535663037633764366265
+39363233613831653236363638326162323964386161336261323137306238636135353338313463
+32383564316332363531653361383137303263333731656661353763366433333138323432323833
+65313362363966333031376638303566623264343334663431663566346436613638353838326463
+38636462313662313261616433393366303366306538373235313633356634633130343865623132
+38363830343231373534373336653033653536303361303766303339323665376130386233626161
+38626231313438386663353734396534383131613930623130616138613931643635616163613062
+39663464663366663735333235343938333464616161313066653039356364363331393930646465
+62623761663261396563353537663532646462353234633632616330326265626131353663656164
+66313961633931316331373266373034383231663636343433653832353539373035386565346664
+37313031623032323737636162313134316564353436616439363263356533326363373331633362
+30346464353161656463383338633938396538326237386135313031363930623938333762633033
+66323931636463346337613937656434353465353966653764383933306164643639343439343836
+35316536343834663234366537386236396331383366353638663638363930383064343464346662
+35313931323962343135613330653334383932343264353062636335626466343231366236383061
+61616331363934663564653137353930653937643866353831643839616331353339376530323236
+34373535366438653336373362383435666565386139333234663861353833316130363939663337
+62306638323264353663643931663232666331323361316463336238623064323262303431343332
+35616663663536343666303663356334636563623233636332393135626532333531383132333239
+64303265346539326531316334316335313938363632633532383834393331373131663538613462
+64633361376665653661363734353333303331383563616666653333633838653966383661323866
+62663265626165396163316230313937333964616131353264326530333033356563303534343864
+39393730616161636435336536636139393936316434343034653130626465326461656239653739
+34393564303961316437353036363732666638316262633566333836653832343266393366636335
+34633461323531313436616235656332353231626634353764313036623232613235303166646436
+36313835653165663138333039326138623136653836393133656464653332376636303031663761
+30613935336237386633616162373763616633626532373465396665306237356536376332656333
+30343037303062396135326434366234333132666561303138613733333437343934653961633334
+3838653536353566653532383334373766646461646237623431
+</file>
+
+<file path="terraform/main.tf">
+# ==============================================================================
+# STAGE 1: Parallel Deployment (Local Host Storage)
+# ==============================================================================
+# This block continues to deploy all 3 K3s nodes in parallel across pve2, 3, and 4
+module "k3s_node" {
+  source   = "./modules/vm"
+  for_each = var.k3s_nodes
+
+  hostname       = "k3s-${each.key}"
+  node_name      = each.value.node_name
+  vmid           = each.value.vmid
+  ip             = each.value.ip
+  gateway        = each.value.gateway
+  vlan_id        = each.value.vlan_id
+  cores          = each.value.cores
+  memory         = each.value.memory
+  disk_size      = each.value.disk_size
+  datastore_id   = each.value.datastore
+  ssh_public_key = local.ssh_public_key
+}
+
+# ==============================================================================
+# STAGE 2: Serial Deployment (Ceph Pool - One at a Time)
+# ==============================================================================
+
+# First Ceph VM: Waits for all Stage 1 local K3s nodes to fully finish
+module "wordpress_hantaweb" {
+  source = "./modules/vm"
+
+  hostname       = "hantaweb"
+  node_name      = var.wordpress_sites["hantaweb"].node_name
+  vmid           = var.wordpress_sites["hantaweb"].vmid
+  ip             = var.wordpress_sites["hantaweb"].ip
+  gateway        = var.wordpress_sites["hantaweb"].gateway
+  vlan_id        = var.wordpress_sites["hantaweb"].vlan_id
+  cores          = var.wordpress_sites["hantaweb"].cores
+  memory         = var.wordpress_sites["hantaweb"].memory
+  disk_size      = var.wordpress_sites["hantaweb"].disk_size
+  datastore_id   = var.wordpress_sites["hantaweb"].datastore
+  ssh_public_key = local.ssh_public_key
+
+  # Enforce Stage 1 completion
+  depends_on = [module.k3s_node]
+}
+
+# Second Ceph VM: Explicitly waits for hantaweb to completely finish first
+module "wordpress_petitsanglais" {
+  source = "./modules/vm"
+
+  hostname       = "petitsanglais"
+  node_name      = var.wordpress_sites["petitsanglais"].node_name
+  vmid           = var.wordpress_sites["petitsanglais"].vmid
+  ip             = var.wordpress_sites["petitsanglais"].ip
+  gateway        = var.wordpress_sites["petitsanglais"].gateway
+  vlan_id        = var.wordpress_sites["petitsanglais"].vlan_id
+  cores          = var.wordpress_sites["petitsanglais"].cores
+  memory         = var.wordpress_sites["petitsanglais"].memory
+  disk_size      = var.wordpress_sites["petitsanglais"].disk_size
+  datastore_id   = var.wordpress_sites["petitsanglais"].datastore
+  ssh_public_key = local.ssh_public_key
+
+  # Enforce serial order within Stage 2 to protect Ceph IOPS
+  depends_on = [module.wordpress_hantaweb]
+}
+
+# Second Ceph VM: Explicitly waits for petitsanglais to completely finish first
+module "wordpress_hantaassos" {
+  source = "./modules/vm"
+
+  hostname       = "hanta-assos"
+  node_name      = var.wordpress_sites["hanta-assos"].node_name
+  vmid           = var.wordpress_sites["hanta-assos"].vmid
+  ip             = var.wordpress_sites["hanta-assos"].ip
+  gateway        = var.wordpress_sites["hanta-assos"].gateway
+  vlan_id        = var.wordpress_sites["hanta-assos"].vlan_id
+  cores          = var.wordpress_sites["hanta-assos"].cores
+  memory         = var.wordpress_sites["hanta-assos"].memory
+  disk_size      = var.wordpress_sites["hanta-assos"].disk_size
+  datastore_id   = var.wordpress_sites["hanta-assos"].datastore
+  ssh_public_key = local.ssh_public_key
+
+  # Enforce serial order within Stage 2 to protect Ceph IOPS
+  depends_on = [module.wordpress_petitsanglais]
+}
+
+# ==============================================================================
+# Append this block to your existing terraform/main.tf
+# ==============================================================================
+
+resource "proxmox_virtual_environment_download_file" "debian_13_lxc_template" {
+  content_type = "vztmpl"
+  datastore_id = "local"
+  node_name    = "pve2"
+  url          = "http://download.proxmox.com/images/system/debian-13-standard_13.1-2_amd64.tar.zst"
+}
+
+module "media_lxc" {
+  source   = "./modules/lxc"
+  for_each = var.media_lxc
+
+  hostname         = each.value.hostname
+  node_name        = each.value.node_name
+  vmid             = each.value.vmid
+  unprivileged     = each.value.unprivileged
+  cores            = each.value.cores
+  memory           = each.value.memory
+  disk_size        = each.value.disk_size
+  datastore_id     = each.value.datastore
+  ip               = each.value.ip
+  gateway          = each.value.gateway
+  vlan_id          = each.value.vlan_id
+  ssh_public_key   = local.ssh_public_key
+  template_file_id = proxmox_virtual_environment_download_file.debian_13_lxc_template.id
+  mount_nfs        = true
+  # device_passthrough deliberately NOT passed — Proxmox rejects this over
+  # API token auth (root@pam or not) at container-create time. Applied
+  # post-creation via SSH in null_resource.media_lxc_post_config below.
+}
+
+resource "null_resource" "media_lxc_post_config" {
+  for_each = var.media_lxc
+
+  depends_on = [module.media_lxc]
+
+  triggers = {
+    vmid = module.media_lxc[each.key].vm_id
+    mac  = module.media_lxc[each.key].mac_address
+  }
+
+  connection {
+    type        = "ssh"
+    host        = "10.0.10.12"
+    user        = "root"
+    private_key = base64decode(var.ssh_private_key_base64)
+  }
+
+  provisioner "remote-exec" {
+    inline = concat(
+      ["pct set ${module.media_lxc[each.key].vm_id} --features nesting=0,mount=nfs"],
+      [
+        for idx, dev in each.value.device_passthrough :
+        "pct set ${module.media_lxc[each.key].vm_id} -dev${idx} path=${dev.path}"
+      ],
+      # Feature/config changes (mount permissions especially) are applied
+      # to a privileged container's AppArmor/cgroup profile at start time,
+      # not hot-reloaded into an already-running container. pct set writes
+      # the config correctly but the running instance won't reflect it
+      # until restarted — confirmed the hard way on the Jellyfin container
+      # (mount=nfs was present in `pct config` but NFS mounts didn't work
+      # until a manual restart).
+      ["pct reboot ${module.media_lxc[each.key].vm_id}"]
+    )
+  }
+}
+</file>
+
+<file path="ansible/roles/jellyfin/tasks/main.yml">
+---
+# roles/jellyfin/tasks/main.yml
+# Provisioning tasks for Jellyfin LXC. Uses direct .list file writes for apt sources
+# to avoid ansible version differences around deb822_repository/apt_repository.
+
+- name: Verify GPU device nodes were actually passed through
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /dev/dri/card1
+    - /dev/dri/renderD128
+  register: gpu_device_check
+
+- name: Fail if no GPU device nodes were passed through
+  ansible.builtin.fail:
+    msg: "Expected GPU device nodes not present: ensure Proxmox device_passthrough is configured for this container."
+  when: >
+    (gpu_device_check.results | selectattr('stat.exists') | list | length) == 0
+
+- name: Determine if any GPU device node exists
+  ansible.builtin.set_fact:
+    gpu_present: "{{ (gpu_device_check.results | selectattr('stat.exists') | list | length) > 0 }}"
+
+- name: Ensure Debian non-free sources list exists (fallback for older Ansible)
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/debian_nonfree.list
+    content: |
+      deb http://deb.debian.org/debian {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'] | default('bookworm'))) }} main contrib non-free
+    mode: '0644'
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Ensure Debian security non-free sources list exists (fallback)
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/debian_nonfree_security.list
+    content: |
+      deb http://security.debian.org/debian-security {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'] | default('bookworm'))) }}-security main contrib non-free
+    mode: '0644'
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Update apt cache after adding non-free repos
+  become: true
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Try to install available VAAPI/QSV packages (only if GPU present)
+  become: true
+  block:
+    - name: Attempt to install candidate VAAPI packages
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - intel-media-va-driver-non-free
+        - intel-media-va-driver
+        - i965-va-driver
+        - vainfo
+        - nfs-common
+      register: va_install_results
+      failed_when: false
+
+    - name: Set va_installed fact if any candidate is present or was installed
+      ansible.builtin.set_fact:
+        va_installed: >-
+          {{ (va_install_results.results | selectattr('changed') | list | length) > 0
+             or (va_install_results.results | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | list | length > 0) }}
+
+    - name: Debug VA install results (helpful when troubleshooting)
+      ansible.builtin.debug:
+        var: va_install_results
+      when: va_install_results is defined and va_install_results.results | length > 0
+
+    - name: Fail if GPU present but no VAAPI package available
+      ansible.builtin.fail:
+        msg: >
+          No VAAPI package available in apt sources. Ensure non-free is enabled
+          in the template or use a different template/storage.
+      when: not va_installed
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - gpu_present
+
+- name: Install VAAPI/QSV userspace driver and diagnostic tools (ensure vainfo present if available)
+  become: true
+  ansible.builtin.apt:
+    name:
+      - vainfo
+    state: present
+    update_cache: true
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - gpu_present
+    - va_installed | default(false)
+
+- name: Verify QSV profiles are visible via vainfo (fails loudly if passthrough is broken at the driver level)
+  ansible.builtin.command: vainfo
+  register: vainfo_result
+  changed_when: false
+  failed_when: "'VAProfile' not in vainfo_result.stdout"
+  when:
+    - gpu_present
+    - va_installed | default(false)
+
+- name: Ensure media library mount points exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /mnt/jellyfin-media
+    - /mnt/jellyfin-media/dvds
+    - /mnt/jellyfin-media/music
+
+- name: Mount NAS-backed media library exports (matches nas_setup's jellyfin/dvds/music datasets)
+  ansible.posix.mount:
+    path: "{{ item.path }}"
+    src: "10.0.10.15:{{ item.export }}"
+    fstype: nfs
+    opts: "rw,soft,timeo=30"
+    state: mounted
+  loop:
+    - { path: /mnt/jellyfin-media,            export: /mnt/storage/jellyfin }
+    - { path: /mnt/jellyfin-media/dvds,        export: /mnt/storage/jellyfin/dvds }
+    - { path: /mnt/jellyfin-media/music,       export: /mnt/storage/jellyfin/music }
+
+- name: Add Jellyfin apt repository signing key
+  become: true
+  ansible.builtin.get_url:
+    url: https://repo.jellyfin.org/jellyfin_team.gpg.key
+    dest: /usr/share/keyrings/jellyfin.gpg
+    mode: '0644'
+
+- name: Add Jellyfin apt repository (fallback .list)
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/jellyfin.list
+    content: |
+      deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/debian {{ (ansible_facts['distribution_release'] | default(ansible_facts['lsb']['codename'] | default('bookworm'))) }} main
+    mode: '0644'
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Update apt cache after adding jellyfin repo
+  become: true
+  ansible.builtin.apt:
+    update_cache: yes
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install Jellyfin
+  ansible.builtin.apt:
+    name: jellyfin
+    state: present
+    update_cache: true
+
+- name: Ensure container has a group matching the device node's numeric GID and add jellyfin to it
+  block:
+    - name: Stat device node to get numeric GID
+      ansible.builtin.stat:
+        path: /dev/dri/renderD128
+      register: render_dev_stat
+      when: gpu_present
+
+    - name: Set device_gid fact
+      ansible.builtin.set_fact:
+        device_gid: "{{ render_dev_stat.stat.gid | int }}"
+      when:
+        - gpu_present
+        - render_dev_stat.stat is defined
+
+    - name: Lookup group name for device_gid (if any)
+      ansible.builtin.command:
+        cmd: "getent group {{ device_gid }}"
+      register: getent_group
+      failed_when: false
+      changed_when: false
+      when: device_gid is defined
+
+    - name: Set existing_group_name fact if getent returned a group
+      ansible.builtin.set_fact:
+        existing_group_name: "{{ (getent_group.stdout.split(':')[0]) if (getent_group.stdout|length > 0) else '' }}"
+      when: device_gid is defined
+
+    - name: Create group with host device GID if none exists
+      ansible.builtin.group:
+        name: "{{ existing_group_name | default('render') }}"
+        gid: "{{ device_gid }}"
+        state: present
+      when:
+        - device_gid is defined
+        - existing_group_name == ''
+
+    - name: Add jellyfin user to device group (by name)
+      ansible.builtin.user:
+        name: jellyfin
+        groups: "{{ existing_group_name | default('render') }}"
+        append: true
+      when: device_gid is defined
+
+    - name: Restart jellyfin to pick up new group membership
+      ansible.builtin.systemd:
+        name: jellyfin
+        state: restarted
+      when: device_gid is defined
+  when: gpu_present
+</file>
+
+<file path="ansible/roles/k3s_cluster/tasks/apps.yml">
+---
+- name: Create local execution bin paths for Helm management
+  file:
+    path: /root/.kube
+    state: directory
+    mode: '0700'
+
+- name: Create symbolic link to cluster credentials for default actions
+  file:
+    src: "{{ k3s_kubeconfig_path }}"
+    dest: /root/.kube/config
+    state: link
+
+- name: Install helm components on control host
+  unarchive:
+    src: "https://get.helm.sh/helm-v3.14.0-linux-amd64.tar.gz"
+    dest: /tmp
+    remote_src: yes
+
+- name: Move helm binary into global pathing execution spots
+  copy:
+    src: /tmp/linux-amd64/helm
+    dest: /usr/local/bin/helm
+    mode: '0755'
+    remote_src: yes
+
+- name: Ensure python3-pip is available for the Kubernetes Python client
+  apt:
+    name: python3-pip
+    state: present
+
+- name: Install Kubernetes Python client (required by k8s / k8s_info modules)
+  pip:
+    name: kubernetes
+    state: present
+    extra_args: "--break-system-packages --ignore-installed"
+
+# --- Deploy Calico (CNI) ---
+# Genuine prerequisite, not a caution: no pod — including ArgoCD's own —
+# can be scheduled without pod networking existing first.
+- name: Wait for K3s API server proxy to accept connections on port 6444
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: 6444
+    delay: 5
+    timeout: 60
+
+- name: Pause briefly to let K3s API server stabilize completely
+  ansible.builtin.pause:
+    seconds: 10
+
+- name: Add Calico (Tigera) Helm repository
+  kubernetes.core.helm_repository:
+    name: projectcalico
+    repo_url: "https://projectcalico.docs.tigera.io/charts"
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Install Calico CRDs (required separately as of v3.32+)
+  kubernetes.core.helm:
+    name: calico-crds
+    chart_ref: projectcalico/crd.projectcalico.org.v1
+    chart_version: "{{ calico_helm_version }}"
+    release_namespace: tigera-operator
+    create_namespace: true
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: result
+  until: result is succeeded
+  retries: 20
+  delay: 15
+
+- name: Deploy Calico CNI inside kube-system scope
+  kubernetes.core.helm:
+    name: calico
+    chart_ref: projectcalico/tigera-operator
+    chart_version: "{{ calico_helm_version }}"
+    release_namespace: tigera-operator
+    values:
+      installation:
+        calicoNetwork:
+          ipPools:
+            - cidr: "{{ k3s_cluster_cidr }}"
+              encapsulation: VXLAN
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Wait for Calico node pods to be Running before continuing
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: calico-system
+    label_selectors:
+      - "k8s-app=calico-node"
+  register: calico_pods
+  until: >
+    calico_pods.resources | length > 0 and
+    calico_pods.resources | map(attribute='status.phase') | unique == ['Running']
+  retries: 30
+  delay: 10
+
+# --- Deploy ArgoCD ---
+# This is the last thing Ansible installs directly. Everything after this
+# point is GitOps-managed — Ansible does not touch Traefik, CrowdSec, or
+# any future workload again.
+- name: Add ArgoCD Helm repository
+  kubernetes.core.helm_repository:
+    name: argo
+    repo_url: "https://argoproj.github.io/argo-helm"
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Install ArgoCD
+  kubernetes.core.helm:
+    name: argocd
+    chart_ref: argo/argo-cd
+    chart_version: "{{ argocd_helm_version }}"
+    release_namespace: argocd
+    create_namespace: true
+    values:
+      configs:
+        params:
+          "server.insecure": true
+      controller:
+        podLabels:
+          workload-tier: memory-heavy
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: DoNotSchedule
+            labelSelector:
+              matchLabels:
+                workload-tier: memory-heavy
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Wait for the ArgoCD application controller to be Running
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: argocd
+    label_selectors:
+      - "app.kubernetes.io/name=argocd-application-controller"
+  register: argocd_pods
+  until: >
+    argocd_pods.resources | length > 0 and
+    argocd_pods.resources | map(attribute='status.phase') | unique == ['Running']
+  retries: 30
+  delay: 10
+
+# --- Bootstrap the App-of-Apps root Application ---
+# From here on, ArgoCD reconciles everything under {{ gitops_repo_path }}
+# in {{ gitops_repo_url }} on its own. Adding a new service later means
+# committing a new file to that path — no further Ansible runs required.
+- name: Apply the ArgoCD root Application (app-of-apps)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: argoproj.io/v1alpha1
+      kind: Application
+      metadata:
+        name: root-app
+        namespace: argocd
+      spec:
+        project: default
+        source:
+          repoURL: "{{ gitops_repo_url }}"
+          targetRevision: "{{ gitops_repo_revision }}"
+          path: "{{ gitops_repo_path }}"
+        destination:
+          server: "https://kubernetes.default.svc"
+          namespace: argocd
+        syncPolicy:
+          automated:
+            prune: true
+            selfHeal: true
+          syncOptions:
+            - CreateNamespace=true
+# --- Generate and register ArgoCD's GitOps deploy key ---
+# Idempotent: openssh_keypair does not regenerate an existing key, so the
+# public key registered with GitHub stays valid across every subsequent run.
+- name: Ensure directory for ArgoCD's GitOps deploy key exists
+  file:
+    path: /etc/ansible-secrets
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: Generate the ArgoCD GitOps deploy key (skipped if it already exists)
+  community.crypto.openssh_keypair:
+    path: /etc/ansible-secrets/argocd_k3s_deploy
+    type: ed25519
+    comment: "argocd-k3s-gitops"
+    mode: '0600'
+
+- name: Read the generated private key from the remote node
+  ansible.builtin.slurp:
+    src: /etc/ansible-secrets/argocd_k3s_deploy
+  register: argocd_priv_key
+
+- name: Register the K3s GitOps repo credentials with ArgoCD
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: k3s-gitops-repo
+        namespace: argocd
+        labels:
+          argocd.argoproj.io/secret-type: repository
+      stringData:
+        type: git
+        url: "{{ gitops_repo_url }}"
+        sshPrivateKey: "{{ argocd_priv_key['content'] | b64decode }}"
+
+- name: Override default StorageClass reclaim policy
+  include_tasks: storageclass-retain.yml
+
+# Prep and setup for etcs snapshots to s3 bucket
+- name: Ensure boto3/botocore are available for S3 bucket management
+  ansible.builtin.pip:
+    name:
+      - boto3
+      - botocore
+    state: present
+    extra_args: "--break-system-packages --ignore-installed"
+
+- name: Ensure a MinIO bucket exists for etcd snapshots
+  amazon.aws.s3_bucket:
+    name: "{{ etcd_s3_bucket }}"
+    state: present
+    endpoint_url: "http://{{ etcd_s3_endpoint }}"
+    aws_access_key: "{{ vault_minio_root_user }}"
+    aws_secret_key: "{{ vault_minio_root_password }}"
+
+- name: Create the etcd snapshot S3 config secret for k3s
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ etcd_s3_config_secret }}"
+        namespace: kube-system
+      type: Opaque
+      stringData:
+        etcd-s3-endpoint: "{{ etcd_s3_endpoint }}"
+        etcd-s3-insecure: "true"
+        etcd-s3-bucket: "{{ etcd_s3_bucket }}"
+        etcd-s3-access-key: "{{ vault_minio_root_user }}"
+        etcd-s3-secret-key: "{{ vault_minio_root_password }}"
+</file>
+
+<file path="ansible/roles/k3s_cluster/tasks/bootstrap.yml">
+---
+# --- Local state check ---
+- name: Check if K3s service is already active on this node
+  ansible.builtin.systemd:
+    name: k3s
+  register: k3s_local_status
+  failed_when: false
+
+- name: Set fact — is K3s already running here?
+  ansible.builtin.set_fact:
+    k3s_already_running: "{{ k3s_local_status.status is defined and k3s_local_status.status.ActiveState == 'active' }}"
+
+# --- Probe the VIP: does a cluster already exist without me? (I may have been rebuilt) ---
+- name: Probe the VIP to check whether a cluster already exists
+  ansible.builtin.uri:
+    url: "https://{{ k3s_api_server }}:{{ k3s_api_port }}/readyz"
+    validate_certs: false
+    status_code: [200, 401, 403]
+    timeout: 5
+  register: vip_probe
+  failed_when: false
+  when: not k3s_already_running
+
+- name: Set fact — does a cluster already exist and answer on the VIP?
+  ansible.builtin.set_fact:
+    cluster_exists: "{{ (vip_probe.status | default(0)) in [200, 401, 403] }}"
+  when: not k3s_already_running
+
+# --- Safety rail: refuse a requested restore against a still-live cluster ---
+# A restore is destructive by design (--cluster-reset wipes this node's
+# etcd member and reseeds it from the snapshot). If the VIP is still
+# answering, a live cluster already exists — restoring now would fight
+# it, not recover it. Fail closed rather than silently doing the wrong
+# thing. Same "never let destructive automation run without a guard"
+# lesson as the terraform -target incident, applied here.
+- name: Refuse to restore if a live cluster is currently answering on the VIP
+  ansible.builtin.fail:
+    msg: >-
+      k3s_restore_from_snapshot=true but {{ k3s_api_server }}:{{ k3s_api_port }}
+      is currently answering — a live cluster already exists. Aborting
+      rather than restoring over it. If you genuinely intend to replace a
+      live cluster's state with an older snapshot, do that as a separate,
+      deliberate action, not via this automatic path.
+  when:
+    - k3s_restore_from_snapshot | default(false)
+    - cluster_exists | default(false)
+    - not k3s_already_running
+
+# --- Defensive cleanup before any path below — safe no-op on a
+# genuinely fresh Terraform-provisioned VM, real work only if this node
+# carries leftover state from a previous install/identity. ---
+- name: Defensive cleanup of any prior k3s state before bootstrapping
+  ansible.builtin.include_tasks: cleanup-stale-state.yml
+  when: not k3s_already_running
+
+# --- Path C: restore from an S3-hosted etcd snapshot (explicit opt-in only) ---
+- name: Restore control plane from etcd snapshot (Path C — full cluster loss)
+  ansible.builtin.include_tasks: restore.yml
+  when:
+    - k3s_restore_from_snapshot | default(false)
+    - not (cluster_exists | default(false))
+    - not k3s_already_running
+
+- name: Set fact — did this run take the restore path?
+  ansible.builtin.set_fact:
+    k3s_did_restore: "{{ (k3s_restore_from_snapshot | default(false)) and not (cluster_exists | default(false)) and not k3s_already_running }}"
+
+# --- Path A: rejoin existing cluster (this node was rebuilt; cluster survived on the VIP) ---
+- name: Rejoin existing cluster (this node was rebuilt; cluster survived on the VIP)
+  ansible.builtin.shell: >
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
+    --server "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
+    --token "{{ vault_k3s_cluster_token }}"
+    --flannel-backend=none
+    --disable traefik
+    --tls-san "{{ k3s_api_server }}"
+    --etcd-s3
+    --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
+    --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
+    --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
+  when:
+    - not k3s_already_running
+    - cluster_exists | default(false)
+
+# --- Path B: genuinely no cluster exists and no restore was requested — this node initializes fresh ---
+- name: Check for a local cluster-init marker (belt-and-braces against accidental re-init)
+  ansible.builtin.stat:
+    path: /etc/rancher/k3s/cluster-initialized
+  register: cluster_init_marker
+  when:
+    - not k3s_already_running
+    - not (cluster_exists | default(false))
+    - not (k3s_restore_from_snapshot | default(false))
+
+- name: Initialize fresh HA control plane via cluster-init
+  ansible.builtin.shell: >
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
+    --cluster-init
+    --token "{{ vault_k3s_cluster_token }}"
+    --flannel-backend=none
+    --disable traefik
+    --disable servicelb
+    --tls-san "{{ k3s_api_server }}"
+    --etcd-s3
+    --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
+    --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
+    --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
+  register: cluster_init_result
+  when: cluster_init_marker.stat is defined and not cluster_init_marker.stat.exists
+
+- name: Record cluster-init marker so a later re-run can't accidentally re-initialize
+  ansible.builtin.file:
+    path: /etc/rancher/k3s/cluster-initialized
+    state: touch
+    mode: '0600'
+  when: cluster_init_result is defined and cluster_init_result is not skipped
+
+# --- Bring the service up, regardless of which of A/B was taken above ---
+# Skipped for Path C — restore.yml already brings its own service up,
+# since a restore needs different systemd/env-file handling (stripping
+# the one-shot --cluster-reset flag) that A/B never touch.
+- name: Ensure server service is up
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    enabled: true
+  when: not (k3s_did_restore | default(false))
+
+- name: Wait for local API server port to accept connections
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ k3s_api_port }}"
+    delay: 5
+    timeout: 60
+  when: not (k3s_did_restore | default(false))
+
+# --- Stand up kube-vip — only on a true fresh init. If this node rejoined
+# an existing cluster (Path A), kube-vip's DaemonSet is already running
+# cluster-wide. Path C applies its own copy inside restore.yml. ---
+- name: Apply kube-vip manifest (auto-applied by K3s's own controller on this node)
+  ansible.builtin.copy:
+    src: files/kube-vip.yaml
+    dest: /var/lib/rancher/k3s/server/manifests/kube-vip.yaml
+    owner: root
+    mode: '0644'
+  when: cluster_init_result is defined and cluster_init_result is not skipped
+</file>
+
+</files>
