@@ -98,24 +98,24 @@ module "media_lxc" {
   source   = "./modules/lxc"
   for_each = var.media_lxc
 
-  hostname         = each.value.hostname
-  node_name        = each.value.node_name
-  vmid             = each.value.vmid
-  unprivileged     = each.value.unprivileged
-  cores            = each.value.cores
-  memory           = each.value.memory
-  disk_size        = each.value.disk_size
-  datastore_id     = each.value.datastore
-  ip               = each.value.ip
-  gateway          = each.value.gateway
-  vlan_id          = each.value.vlan_id
-  ssh_public_key   = local.ssh_public_key
-  template_file_id = proxmox_virtual_environment_download_file.debian_13_lxc_template.id
-  mount_nfs        = true
-  # device_passthrough deliberately NOT passed — Proxmox rejects this over
-  # API token auth (root@pam or not) at container-create time. Applied
-  # post-creation via SSH in null_resource.media_lxc_post_config below.
+  hostname            = each.value.hostname
+  node_name           = each.value.node_name
+  vmid                = each.value.vmid
+  unprivileged        = each.value.unprivileged
+  cores               = each.value.cores
+  memory              = each.value.memory
+  disk_size           = each.value.disk_size
+  datastore_id        = each.value.datastore
+  ip                  = each.value.ip
+  gateway             = each.value.gateway
+  vlan_id             = each.value.vlan_id
+  ssh_public_key      = local.ssh_public_key
+  template_file_id    = proxmox_virtual_environment_download_file.debian_13_lxc_template.id
+  mount_nfs           = true
+  device_passthrough  = each.value.device_passthrough
 }
+
+# null_resource.media_lxc_post_config — delete entirely
 
 resource "null_resource" "media_lxc_post_config" {
   for_each = var.media_lxc

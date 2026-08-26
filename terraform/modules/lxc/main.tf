@@ -43,4 +43,19 @@ resource "proxmox_virtual_environment_container" "this" {
     template_file_id = var.template_file_id
     type             = "debian"
   }
+
 }
+  features {
+    nesting = false
+    mount   = var.mount_nfs ? ["nfs"] : []
+  }
+
+  dynamic "device_passthrough" {
+    for_each = var.device_passthrough
+    content {
+      path = device_passthrough.value.path
+      uid  = device_passthrough.value.uid
+      gid  = device_passthrough.value.gid
+      mode = device_passthrough.value.mode
+    }
+  }
