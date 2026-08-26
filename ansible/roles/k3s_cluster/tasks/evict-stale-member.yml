@@ -1,10 +1,18 @@
 ---
-# Expects:
-#   eviction_peer      – host to run on
+# Evict a stale etcd member and its Kubernetes Node object from a live
+# cluster. Called from rejoin.yml for any single-node recovery.
+#
+# Expects (set by the caller):
+#   eviction_peer      – inventory hostname of a live peer to run on
 #   target_node_name   – inventory_hostname of the node being rejoined
-#   target_node_ip     – ansible_host of the node being rejoined
-# Sets:
+#   target_node_ip     – ansible_host / IP of the node being rejoined
+#
+# Sets on success:
 #   eviction_succeeded – true when this peer successfully talked to etcd
+#
+# Idempotent: if the member or Node object is already gone, the tasks
+# are no-ops. Safe under the alert-router single-node-failure guarantee
+# (multi-node simultaneous outages are refused upstream).
 
 - name: List etcd members on peer
   ansible.builtin.shell: |
@@ -21,17 +29,32 @@
   changed_when: false
   failed_when: false
 
-- name: Extract stale member ID matching target IP
+- name: Extract stale member ID matching the rejoining node's IP
+  ansible.builtin.shell: |
+    set -euo pipefail
+    # etcdctl member list default format:
+    #   <hex-id>, <status>, <name>, <peerURLs>, <clientURLs>, <isLearner>
+    # Match any field that contains the target IP, print the first column (ID).
+    echo "{{ etcd_member_list.stdout | default('') }}" \
+      | awk -F',' -v ip="{{ target_node_ip }}" '
+          $0 ~ ip {
+            gsub(/^[ \t]+|[ \t]+$/, "", $1)
+            print $1
+            exit
+          }
+        '
+  register: stale_id_extract
+  changed_when: false
+  when:
+    - etcd_member_list.rc is defined
+    - etcd_member_list.rc == 0
+
+- name: Set stale_etcd_member_id fact
   ansible.builtin.set_fact:
-    stale_etcd_member_id: >-
-      {{
-        etcd_member_list.stdout_lines
-        | select('search', target_node_ip)
-        | map('regex_replace', '^([0-9a-fA-F]+),.*', '\\1')
-        | first
-        | default('')
-      }}
-  when: etcd_member_list.rc is defined and etcd_member_list.rc == 0
+    stale_etcd_member_id: "{{ stale_id_extract.stdout | default('') | trim }}"
+  when:
+    - stale_id_extract is defined
+    - stale_id_extract.stdout is defined
 
 - name: Remove stale etcd member (if present)
   ansible.builtin.shell: |
@@ -41,24 +64,33 @@
       --cert=/var/lib/rancher/k3s/server/tls/etcd/client.crt \
       --key=/var/lib/rancher/k3s/server/tls/etcd/client.key \
       --endpoints=https://127.0.0.1:2379 \
-      member remove {{ stale_etcd_member_id }}
+      member remove "{{ stale_etcd_member_id }}"
   delegate_to: "{{ eviction_peer }}"
   become: true
+  register: etcd_remove_result
+  # "member not found" is success for our purposes (already gone / race)
+  failed_when:
+    - etcd_remove_result.rc != 0
+    - "'member not found' not in (etcd_remove_result.stderr | default(''))"
   when:
     - stale_etcd_member_id is defined
     - (stale_etcd_member_id | length) > 0
-  register: etcd_remove_result
+    - (stale_etcd_member_id | regex_search('^[0-9a-fA-F]+$')) is not none
 
-- name: Delete Kubernetes Node object
+- name: Delete Kubernetes Node object for the rejoining host
   ansible.builtin.command: >
     k3s kubectl delete node {{ target_node_name }} --ignore-not-found
   delegate_to: "{{ eviction_peer }}"
   become: true
   register: kubectl_delete_result
   changed_when: "'deleted' in (kubectl_delete_result.stdout | default(''))"
-  when: etcd_member_list.rc is defined and etcd_member_list.rc == 0
+  when:
+    - etcd_member_list.rc is defined
+    - etcd_member_list.rc == 0
 
 - name: Mark this peer as having performed a successful eviction
   ansible.builtin.set_fact:
     eviction_succeeded: true
-  when: etcd_member_list.rc is defined and etcd_member_list.rc == 0
+  when:
+    - etcd_member_list.rc is defined
+    - etcd_member_list.rc == 0
