@@ -1,0 +1,15 @@
+# Managed by Ansible — role: glpi_agent. Do not edit by hand; changes
+# will be overwritten on the next run.
+
+server = {{ glpi_agent_server_url }}
+delaytime = {{ glpi_agent_delaytime }}
+tag = {{ glpi_agent_tag }}
+{% if glpi_agent_no_httpd %}
+no-httpd = 1
+{% endif %}
+
+# Don't scan user home directories/profiles for installed software — not
+# meaningful on headless Proxmox hosts / the NAS, and cuts inventory run
+# time down.
+scan-homedirs = 0
+scan-profiles = 0
