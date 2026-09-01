@@ -12,6 +12,7 @@
   ansible.builtin.command: dpkg --print-architecture
   register: dpkg_arch
   changed_when: false
+  check_mode: false
 
 - name: Download GLPI-Agent .deb package (checksum-verified against upstream .sha256)
   ansible.builtin.get_url:
