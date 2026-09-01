@@ -1,0 +1,52 @@
+---
+- name: Ensure prerequisite packages are present
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - libnet-ssleay-perl
+      - libio-socket-ssl-perl
+    state: present
+    update_cache: true
+
+- name: Determine dpkg architecture for this host
+  ansible.builtin.command: dpkg --print-architecture
+  register: dpkg_arch
+  changed_when: false
+
+- name: Download GLPI-Agent .deb package (checksum-verified against upstream .sha256)
+  ansible.builtin.get_url:
+    url: "https://github.com/glpi-project/glpi-agent/releases/download/{{ glpi_agent_version }}/glpi-agent_{{ glpi_agent_version }}_{{ dpkg_arch.stdout }}.deb"
+    dest: "/tmp/glpi-agent_{{ glpi_agent_version }}_{{ dpkg_arch.stdout }}.deb"
+    # Same pattern as smartctl_exporter: Ansible fetches the .sha256 file,
+    # finds the line matching the downloaded filename, verifies against
+    # it — no hardcoded hash to go stale on a version bump.
+    checksum: "sha256:https://github.com/glpi-project/glpi-agent/releases/download/{{ glpi_agent_version }}/glpi-agent-{{ glpi_agent_version }}.sha256"
+    mode: '0644'
+
+- name: Install GLPI-Agent package
+  ansible.builtin.apt:
+    deb: "/tmp/glpi-agent_{{ glpi_agent_version }}_{{ dpkg_arch.stdout }}.deb"
+    state: present
+
+- name: Ensure GLPI-Agent config directory exists
+  ansible.builtin.file:
+    path: /etc/glpi-agent
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy GLPI-Agent configuration
+  ansible.builtin.template:
+    src: agent.cfg.j2
+    dest: /etc/glpi-agent/agent.cfg
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart glpi-agent
+
+- name: Enable and start glpi-agent service
+  ansible.builtin.systemd:
+    name: glpi-agent
+    state: started
+    enabled: true

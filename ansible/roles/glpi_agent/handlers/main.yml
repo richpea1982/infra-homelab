@@ -1,0 +1,5 @@
+---
+- name: restart glpi-agent
+  ansible.builtin.systemd:
+    name: glpi-agent
+    state: restarted

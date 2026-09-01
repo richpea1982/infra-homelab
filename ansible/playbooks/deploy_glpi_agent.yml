@@ -1,0 +1,8 @@
+---
+- name: Deploy GLPI-Agent for hardware/software inventory (Proxmox + NAS)
+  hosts: physical_nodes
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: ../roles/glpi_agent
