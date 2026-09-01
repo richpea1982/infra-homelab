@@ -8,16 +8,10 @@
     state: present
     update_cache: true
 
-- name: Determine dpkg architecture for this host
-  ansible.builtin.command: dpkg --print-architecture
-  register: dpkg_arch
-  changed_when: false
-  check_mode: false
-
 - name: Download GLPI-Agent .deb package (checksum-verified against upstream .sha256)
   ansible.builtin.get_url:
-    url: "https://github.com/glpi-project/glpi-agent/releases/download/{{ glpi_agent_version }}/glpi-agent_{{ glpi_agent_version }}_{{ dpkg_arch.stdout }}.deb"
-    dest: "/tmp/glpi-agent_{{ glpi_agent_version }}_{{ dpkg_arch.stdout }}.deb"
+    url: "https://github.com/glpi-project/glpi-agent/releases/download/{{ glpi_agent_version }}/glpi-agent_{{ glpi_agent_version }}-{{ glpi_agent_deb_revision }}_all.deb"
+    dest: "/tmp/glpi-agent_{{ glpi_agent_version }}-{{ glpi_agent_deb_revision }}_all.deb"
     # Same pattern as smartctl_exporter: Ansible fetches the .sha256 file,
     # finds the line matching the downloaded filename, verifies against
     # it — no hardcoded hash to go stale on a version bump.
@@ -26,7 +20,7 @@
 
 - name: Install GLPI-Agent package
   ansible.builtin.apt:
-    deb: "/tmp/glpi-agent_{{ glpi_agent_version }}_{{ dpkg_arch.stdout }}.deb"
+    deb: "/tmp/glpi-agent_{{ glpi_agent_version }}-{{ glpi_agent_deb_revision }}_all.deb"
     state: present
 
 - name: Ensure GLPI-Agent config directory exists

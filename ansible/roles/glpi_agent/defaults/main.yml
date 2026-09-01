@@ -4,9 +4,15 @@
 # smartctl_exporter. Verify this version against
 # https://github.com/glpi-project/glpi-agent/releases before applying —
 # same "don't trust a pinned version blindly" rule as everywhere else in
-# this repo. As of writing, 1.19/1.20 are the current stable/nightly
-# lines; do not assume this default stays current.
+# this repo.
 glpi_agent_version: "1.19"
+
+# The Debian package carries its own revision suffix independent of the
+# agent version (e.g. glpi-agent_1.19-1_all.deb) — bumped when
+# Debian-packaging-specific fixes ship without a full agent release.
+# Check the release page's "Debian/Ubuntu packages" table if a download
+# 404s; the agent version bump alone doesn't guarantee this stays "1".
+glpi_agent_deb_revision: "1"
 
 # Native GLPI 10+ inventory endpoint — internal-only IngressRoute,
 # protected by the glpi-admin-only ipAllowList (VLAN10/WireGuard/
