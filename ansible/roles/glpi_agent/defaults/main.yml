@@ -19,6 +19,12 @@ glpi_agent_deb_revision: "1"
 # Tailscale) and the crowdsec-bouncer middleware, same as browser access.
 glpi_agent_server_url: "https://glpi.pearsalls.fr/front/inventory.php"
 
+# glpi.pearsalls.fr has no public DNS record (Unbound split-horizon DNS
+# isn't live yet) — Traefik's LoadBalancer VIP is what /etc/hosts needs
+# to point at in the meantime. Remove this task's effect (or point it at
+# an internal resolver instead) once split-horizon DNS lands.
+glpi_agent_hosts_entry_ip: "10.0.20.24"
+
 # How often the agent re-runs inventory and pushes to the server.
 glpi_agent_delaytime: "3600"
 

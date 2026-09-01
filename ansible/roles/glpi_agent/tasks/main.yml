@@ -8,6 +8,19 @@
     state: present
     update_cache: true
 
+# glpi.pearsalls.fr deliberately has no public A/CNAME record (same
+# pattern as vault.pearsalls.fr / photos.pearsalls.fr — a real subdomain
+# for the Let's Encrypt DNS-01 cert, resolved only via manual /etc/hosts
+# until Unbound split-horizon DNS is live on OPNsense). Every host
+# running the agent needs this entry, or the prolog request fails with
+# "Name or service not known" before it ever reaches the network layer.
+- name: Ensure /etc/hosts resolves glpi.pearsalls.fr until split-horizon DNS is live
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '\sglpi\.pearsalls\.fr$'
+    line: "{{ glpi_agent_hosts_entry_ip }} glpi.pearsalls.fr"
+    state: present
+
 - name: Download GLPI-Agent .deb package (checksum-verified against upstream .sha256)
   ansible.builtin.get_url:
     url: "https://github.com/glpi-project/glpi-agent/releases/download/{{ glpi_agent_version }}/glpi-agent_{{ glpi_agent_version }}-{{ glpi_agent_deb_revision }}_all.deb"
