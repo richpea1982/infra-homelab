@@ -39,6 +39,9 @@ nas_datasets:
         options: "rw,sync,no_subtree_check,no_root_squash,insecure"
   - name: "photoprism"
     recordsize: "128k"
+    exports:
+      - subnet: "10.0.20.0/24"
+        options: "rw,sync,no_subtree_check,no_root_squash,insecure"
   - name: "minio"
     recordsize: "128k"
     local_only: true
@@ -69,7 +72,6 @@ nas_datasets:
         options: "rw,async,no_subtree_check,no_root_squash"
       - subnet: "10.0.30.0/24"
         options: "rw,sync,no_subtree_check,no_root_squash,insecure"
-
 # MinIO Configuration
 minio_download_url: "https://dl.min.io/server/minio/release/linux-amd64/minio"
 minio_version: "RELEASE.2026-07-03T16-39-21Z"
