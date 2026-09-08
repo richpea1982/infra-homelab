@@ -18,12 +18,25 @@ zfs_raidz2_disks:
   - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_Y6SGCKJFT
   - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_865XTG96T
 
-# Grouping datasets with their optimized properties 
-# Note: minio and seafile are marked as local_only: true so NFS skips them
+# Grouping datasets with their optimized properties
+# Note: minio is marked as local_only: true so NFS skips it
 nas_datasets:
+  # CHANGED: seafile is moving from the standalone LXC (local-only ZFS
+  # mount) to K3s (seafile-server + seahub, custom images). Both pods
+  # need concurrent RWX access to the same library data, so this is now
+  # NFS-exported to VLAN20 (10.0.20.0/24) — same shape as the jellyfin
+  # dataset's VLAN30 export, just a different destination VLAN because
+  # the consumer is K3s pods, not an LXC. `sync` (not `async`) to match
+  # jellyfin's VLAN30 export, since this is now backing a multi-writer
+  # library rather than a read-mostly media share — worth the latency
+  # cost for write integrity. `insecure` because the in-cluster NFS
+  # client (kubelet, mounting on behalf of the pod) does not necessarily
+  # originate from a privileged (<1024) source port.
   - name: "seafile"
     recordsize: "128k"
-    local_only: true
+    exports:
+      - subnet: "10.0.20.0/24"
+        options: "rw,sync,no_subtree_check,no_root_squash,insecure"
   - name: "photoprism"
     recordsize: "128k"
   - name: "minio"

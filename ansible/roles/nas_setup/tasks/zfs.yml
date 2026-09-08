@@ -52,3 +52,27 @@
       mountpoint: "{{ nas_mount_point_base }}/{{ item.name }}"
       recordsize: "{{ item.recordsize | default('128k') }}"
   loop: "{{ nas_datasets }}"
+
+# NEW: Seafile on K3s uses three static PVs (data / avatars / custom)
+# against subdirectories of this one dataset, mirroring how
+# seafile-containerized splits the docker volumes seafile-data,
+# seahub-avatars, and seahub-custom. Kubernetes' static NFS PV type
+# does not create the remote path itself — it must already exist, or
+# the mount fails at pod start. Created here, once, idempotently,
+# rather than as a manual one-off step outside IaC.
+- name: Ensure seafile K3s subdirectories exist (data / avatars / custom)
+  ansible.builtin.file:
+    path: "{{ nas_mount_point_base }}/seafile/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0777' # seafile-server/seahub run as non-root inside their
+                 # containers with no explicit UID/GID pinning here yet —
+                 # open perms are the pragmatic starting point, same as
+                 # relying on no_root_squash on the export itself. Worth
+                 # tightening once the container's actual runtime UID is
+                 # confirmed (check via `kubectl exec ... -- id`).
+  loop:
+    - data
+    - avatars
+    - custom
