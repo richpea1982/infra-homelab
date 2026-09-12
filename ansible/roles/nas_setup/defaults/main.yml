@@ -39,9 +39,12 @@ nas_datasets:
         options: "rw,sync,no_subtree_check,no_root_squash,insecure"
   - name: "photoprism"
     recordsize: "128k"
+    world_writable: true
     exports:
       - subnet: "10.0.20.0/24"
         options: "rw,sync,no_subtree_check,no_root_squash,insecure"
+      - subnet: "10.100.0.4/32"
+        options: "rw,async,no_subtree_check,no_root_squash"
   - name: "minio"
     recordsize: "128k"
     local_only: true

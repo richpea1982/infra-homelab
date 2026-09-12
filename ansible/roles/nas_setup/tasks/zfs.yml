@@ -53,6 +53,15 @@
       recordsize: "{{ item.recordsize | default('128k') }}"
   loop: "{{ nas_datasets }}"
 
+- name: Open permissions on datasets that need multi-client/non-root write access
+  ansible.builtin.file:
+    path: "{{ nas_mount_point_base }}/{{ item.name }}"
+    state: directory
+    mode: '0777'
+  loop: "{{ nas_datasets }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.world_writable | default(false)
 # NEW: Seafile on K3s uses three static PVs (data / avatars / custom)
 # against subdirectories of this one dataset, mirroring how
 # seafile-containerized splits the docker volumes seafile-data,
