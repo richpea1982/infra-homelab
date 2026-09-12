@@ -45,7 +45,7 @@ nas_datasets:
         options: "rw,sync,no_subtree_check,no_root_squash,insecure"
       - subnet: "10.100.0.4/32"
         options: "rw,async,no_subtree_check,no_root_squash"
-      - subnet: "10.10.0.100/32"
+      - subnet: "10.0.10.100/32"
         options: "rw,async,no_subtree_check,no_root_squash"
   - name: "minio"
     recordsize: "128k"
