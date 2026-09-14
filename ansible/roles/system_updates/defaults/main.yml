@@ -1,0 +1,6 @@
+---
+# dist upgrade pulls in kernel/glibc-class changes too; set false if you
+# want a more conservative "security + minor bumps only" pass.
+system_updates_dist_upgrade: true
+system_updates_autoremove: true
+system_updates_reboot_if_required: false

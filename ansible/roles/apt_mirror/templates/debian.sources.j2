@@ -1,0 +1,11 @@
+Types: deb
+URIs: http://{{ apt_mirror_host }}/deb.debian.org/debian
+Suites: {{ apt_mirror_suite }} {{ apt_mirror_suite }}-updates
+Components: {{ apt_mirror_components }}
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: http://{{ apt_mirror_host }}/security.debian.org/debian-security
+Suites: {{ apt_mirror_security_suite }}
+Components: {{ apt_mirror_components }}
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg

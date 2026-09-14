@@ -1,0 +1,31 @@
+---
+- name: Deploy deb822 sources file pointing at the local apt-mirror
+  ansible.builtin.template:
+    src: debian.sources.j2
+    dest: /etc/apt/sources.list.d/debian.sources
+    owner: root
+    group: root
+    mode: '0644'
+  register: apt_mirror_sources
+
+# Debian cloud images (and older bookworm LXCs) may still ship a classic
+# sources.list — deb822 + sources.list both active means duplicate entries
+# and apt update warnings. Disable it rather than delete, so a rollback
+# just means renaming it back.
+- name: Check for a legacy sources.list
+  ansible.builtin.stat:
+    path: /etc/apt/sources.list
+  register: legacy_sources_list
+
+- name: Disable legacy sources.list if present and non-empty
+  ansible.builtin.command:
+    cmd: mv /etc/apt/sources.list /etc/apt/sources.list.disabled-by-apt-mirror
+  when:
+    - legacy_sources_list.stat.exists
+    - legacy_sources_list.stat.size > 0
+  changed_when: true
+
+- name: Refresh apt cache against the new sources
+  ansible.builtin.apt:
+    update_cache: true
+  when: apt_mirror_sources.changed

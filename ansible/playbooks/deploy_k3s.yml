@@ -23,5 +23,6 @@
     - ../group_vars/all/vault.yml
 
   roles:
+    - role: ../roles/apt_mirror
     - role: ../roles/k3s_cluster
 

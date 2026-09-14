@@ -1,0 +1,7 @@
+---
+apt_mirror_host: "10.0.10.80"
+# Auto-detects per host — override in group_vars/host_vars for anything
+# still on a different release than the mirror actually serves.
+apt_mirror_suite: "{{ ansible_distribution_release }}"
+apt_mirror_security_suite: "{{ ansible_distribution_release }}-security"
+apt_mirror_components: "main contrib non-free non-free-firmware"
