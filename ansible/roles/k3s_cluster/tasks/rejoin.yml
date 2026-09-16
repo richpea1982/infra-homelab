@@ -24,6 +24,11 @@
   ansible.builtin.include_tasks: cleanup-stale-state.yml
   when: not k3s_already_running
 
+- name: Remove stale VIP address if bound to this node's interface
+  ansible.builtin.command: "ip addr del {{ k3s_api_server }}/32 dev eth0"
+  failed_when: false
+  changed_when: true
+
 - name: Wait for the VIP to be reachable before attempting to join
   ansible.builtin.uri:
     url: "https://{{ k3s_api_server }}:{{ k3s_api_port }}/readyz"
