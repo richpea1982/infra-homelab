@@ -8,5 +8,7 @@
 
   roles:
     - role: ../roles/apt_mirror
-    - role: ../roles/k3s_cluster
-      tasks_from: join
+
+  tasks:
+    - name: Include secondary node join tasks directly
+      ansible.builtin.include_tasks: "../roles/k3s_cluster/tasks/join.yml"
