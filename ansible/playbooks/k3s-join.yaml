@@ -8,7 +8,5 @@
 
   roles:
     - role: ../roles/apt_mirror
-
-  tasks:
-    - name: Execute join tasks directly for secondary nodes
-      ansible.builtin.include_tasks: ../roles/k3s_cluster/tasks/join.yml
+    - role: ../roles/k3s_cluster
+      tasks_from: join
