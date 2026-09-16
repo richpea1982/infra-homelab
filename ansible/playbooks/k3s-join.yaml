@@ -1,0 +1,14 @@
+---
+- name: Orchestrate K3s Node Join
+  hosts: k3s_cluster
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all/vault.yml
+
+  roles:
+    - role: ../roles/apt_mirror
+
+  tasks:
+    - name: Execute join tasks directly for secondary nodes
+      ansible.builtin.include_tasks: ../roles/k3s_cluster/tasks/join.yml
