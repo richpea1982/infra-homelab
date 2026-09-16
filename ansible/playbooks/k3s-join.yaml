@@ -11,4 +11,4 @@
 
   tasks:
     - name: Include secondary node join tasks directly
-      ansible.builtin.include_tasks: "../roles/k3s_cluster/tasks/join.yml"
+      ansible.builtin.include_tasks: "roles/k3s_cluster/tasks/join.yml"
