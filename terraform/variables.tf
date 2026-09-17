@@ -36,7 +36,6 @@ variable "wordpress_sites" {
     datastore = string
   }))
 }
-# ssh public key injection
 variable "ssh_public_key" {
   type    = string
   default = null
@@ -46,9 +45,6 @@ variable "ssh_private_key_base64" {
   description = "Base64 encoded private SSH key passed from Semaphore secrets"
   sensitive   = true
 }
-# ==============================================================================
-# Append this block to your existing terraform/variables.tf
-# ==============================================================================
 
 variable "media_lxc" {
   description = "Media-serving LXCs on pve2 — Jellyfin (privileged, iGPU passthrough) and Photoprism (unprivileged, no passthrough)."

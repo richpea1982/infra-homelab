@@ -63,7 +63,6 @@ module "wordpress_petitsanglais" {
   depends_on = [module.wordpress_hantaweb]
 }
 
-# Second Ceph VM: Explicitly waits for petitsanglais to completely finish first
 module "wordpress_hantaassos" {
   source = "./modules/vm"
 
@@ -82,10 +81,6 @@ module "wordpress_hantaassos" {
   # Enforce serial order within Stage 2 to protect Ceph IOPS
   depends_on = [module.wordpress_petitsanglais]
 }
-
-# ==============================================================================
-# Append this block to your existing terraform/main.tf
-# ==============================================================================
 
 resource "proxmox_virtual_environment_download_file" "debian_13_lxc_template" {
   content_type = "vztmpl"
