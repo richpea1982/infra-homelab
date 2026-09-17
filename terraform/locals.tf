@@ -1,3 +1,5 @@
 locals {
-  ssh_public_key = coalesce(var.ssh_public_key, file(pathexpand("~/.ssh/id_terraform.pub")))
+  ssh_public_key = var.ssh_public_key != null ? var.ssh_public_key : (
+    fileexists(pathexpand("~/.ssh/id_terraform.pub")) ? file(pathexpand("~/.ssh/id_terraform.pub")) : null
+  )
 }

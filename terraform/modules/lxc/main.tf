@@ -58,4 +58,11 @@ resource "proxmox_virtual_environment_container" "this" {
       mode = device_passthrough.value.mode
     }
   }
+
+  lifecycle {
+    precondition {
+      condition     = var.ssh_public_key != null && var.ssh_public_key != ""
+      error_message = "ssh_public_key is required but none is available — no password auth exists for these hosts"
+    }
+  }
 }

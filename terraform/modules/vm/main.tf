@@ -84,4 +84,11 @@ resource "proxmox_virtual_environment_vm" "this" {
     # Attach the cloud-init snippet to install the guest agent
     vendor_data_file_id = proxmox_virtual_environment_file.vendor_data.id
   }
+
+  lifecycle {
+    precondition {
+      condition     = var.ssh_public_key != null && var.ssh_public_key != ""
+      error_message = "ssh_public_key is required but none is available — no password auth exists for these hosts"
+    }
+  }
 }
