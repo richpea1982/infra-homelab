@@ -4,8 +4,8 @@ media_lxc = {
     node_name    = "pve2"
     vmid         = 3010
     unprivileged = false # privileged — WireGuard/Tailscale-only exposure, no
-                          # public attack surface, and it removes the idmap
-                          # GID-mapping step for the iGPU render group.
+    # public attack surface, and it removes the idmap
+    # GID-mapping step for the iGPU render group.
     cores     = 3
     memory    = 6144
     disk_size = 20 # OS only — media library lives on NFS from the NAS, not here

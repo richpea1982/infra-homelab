@@ -10,15 +10,15 @@ variable "proxmox_api_token" {
 variable "k3s_nodes" {
   description = "K3s cluster nodes (embedded etcd, all schedulable)"
   type = map(object({
-    node_name = string   # target Proxmox host: pve2/pve3/pve4
+    node_name = string # target Proxmox host: pve2/pve3/pve4
     vmid      = number
-    ip        = string   # CIDR, e.g. 10.0.10.20/24
+    ip        = string # CIDR, e.g. 10.0.10.20/24
     gateway   = string
     vlan_id   = number
     cores     = number
     memory    = number
     disk_size = number
-    datastore = string   # local storage only — never Ceph (etcd fsync sensitivity)
+    datastore = string # local storage only — never Ceph (etcd fsync sensitivity)
   }))
 }
 
