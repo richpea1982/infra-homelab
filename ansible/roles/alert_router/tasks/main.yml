@@ -1,32 +1,32 @@
 ---
 - name: Ensure alert-router application directory exists
-  file:
+  ansible.builtin.file:
     path: /opt/alert-router
     state: directory
     owner: root
     group: root
-    mode: '0755'
+    mode: "0755"
 
 - name: Deploy alert-router application code
-  copy:
+  ansible.builtin.copy:
     src: main.py
     dest: /opt/alert-router/main.py
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   notify: restart alert-router
 
 - name: Deploy Python requirements list
-  copy:
+  ansible.builtin.copy:
     src: requirements.txt
     dest: /opt/alert-router/requirements.txt
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   notify: restart alert-router
 
 - name: Ensure python3-venv is available
-  apt:
+  ansible.builtin.apt:
     name: python3-venv
     state: present
 
@@ -42,34 +42,34 @@
   notify: restart alert-router
 
 - name: Ensure alert-router state directory exists
-  file:
+  ansible.builtin.file:
     path: /var/lib/alert-router
     state: directory
     owner: root
     group: root
-    mode: '0750'
+    mode: "0750"
 
 - name: Deploy alert-router environment file (Semaphore credentials + template IDs)
-  template:
+  ansible.builtin.template:
     src: alert-router.env.j2
     dest: /etc/alert-router.env
     owner: root
     group: root
-    mode: '0600'
+    mode: "0600"
   no_log: true
   notify: restart alert-router
 
 - name: Deploy alert-router systemd unit
-  template:
+  ansible.builtin.template:
     src: alert-router.service.j2
     dest: /etc/systemd/system/alert-router.service
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   register: alert_router_unit
 
 - name: Enable and start alert-router service
-  systemd:
+  ansible.builtin.systemd:
     name: alert-router
     state: started
     enabled: true

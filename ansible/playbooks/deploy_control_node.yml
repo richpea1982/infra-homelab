@@ -6,6 +6,6 @@
     - ../group_vars/all/vault.yml
 
   roles:
-    - role: ../roles/apt_mirror
-    - role: ../roles/automation_control
-    - role: ../roles/alert_router
+    - role: apt_mirror
+    - role: automation_control
+    - role: alert_router

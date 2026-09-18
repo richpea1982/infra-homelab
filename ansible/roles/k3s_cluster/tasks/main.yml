@@ -1,17 +1,17 @@
 ---
 - name: Execute System Pre-requisites & OS Hardening
-  include_tasks: prereqs.yml
+  ansible.builtin.include_tasks: prereqs.yml
 
 - name: Dispatch primary node (restore or rejoin)
-  include_tasks: primary-node.yml
+  ansible.builtin.include_tasks: primary-node.yml
   when: k3s_node_index | int == 1
 
 - name: Deploy Cluster Native Network, Ingress Security Tools
-  include_tasks: apps.yml
+  ansible.builtin.include_tasks: apps.yml
   when: k3s_node_index | int == 1
 
 - name: Rejoin cluster on secondary nodes
-  include_tasks: rejoin.yml
+  ansible.builtin.include_tasks: rejoin.yml
   when: k3s_node_index | int > 1
 
 - name: Apply user convenience settings

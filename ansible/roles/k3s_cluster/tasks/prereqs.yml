@@ -1,11 +1,11 @@
 ---
 - name: Ensure apt cache is up to date (Debian/Ubuntu)
-  apt:
-    update_cache: yes
+  ansible.builtin.apt:
+    update_cache: true
   when: ansible_facts['pkg_mgr'] == 'apt'
 
 - name: Install arptables and ebtables packages if available (Debian/Ubuntu)
-  apt:
+  ansible.builtin.apt:
     name:
       - arptables
       - ebtables
@@ -16,9 +16,9 @@
   when: ansible_facts['pkg_mgr'] == 'apt'
 
 - name: Check for legacy binary for each tool
-  stat:
+  ansible.builtin.stat:
     path: "/usr/sbin/{{ item }}-legacy"
-  register: legacy_stat
+  register: k3s_cluster_legacy_stat
   loop:
     - iptables
     - ip6tables
@@ -31,39 +31,39 @@
   community.general.alternatives:
     name: "{{ item.item }}"
     path: "/usr/sbin/{{ item.item }}-legacy"
-  loop: "{{ legacy_stat.results }}"
+  loop: "{{ k3s_cluster_legacy_stat.results }}"
   when: item.stat.exists
 
 - name: Warn when a legacy binary is missing (informational)
-  debug:
+  ansible.builtin.debug:
     msg: "Legacy binary /usr/sbin/{{ item.item }}-legacy not found; skipping alternatives for {{ item.item }}"
-  loop: "{{ legacy_stat.results }}"
+  loop: "{{ k3s_cluster_legacy_stat.results }}"
   when: not item.stat.exists
 
 - name: Ensure /etc/rancher/k3s directory exists
-  file:
+  ansible.builtin.file:
     path: /etc/rancher/k3s
     state: directory
-    mode: '0755'
+    mode: "0755"
     owner: root
     group: root
 
 - name: Ensure standard upstream nameserver fallback is declared
-  copy:
+  ansible.builtin.copy:
     dest: /etc/rancher/k3s/resolv.conf
     content: |
       nameserver 1.1.1.1
       nameserver 8.8.8.8
-    mode: '0644'
+    mode: "0644"
     owner: root
     group: root
 
 - name: Turn off swap space completely for current session
-  command: swapoff -a
+  ansible.builtin.command: swapoff -a
   changed_when: false
 
 - name: Disable swap in fstab persistently across reboots
-  replace:
+  ansible.builtin.replace:
     path: /etc/fstab
-    regexp: '^([^#].*\sswap\s.*)$'
-    replace: '#\1'
+    regexp: "^([^#].*\\sswap\\s.*)$"
+    replace: "#\\1"

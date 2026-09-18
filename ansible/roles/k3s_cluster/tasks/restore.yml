@@ -1,7 +1,7 @@
 ---
 # Path C — restore this node's control plane from the most recent (or an
 # explicitly named) S3-hosted etcd snapshot. Only reached from
-# bootstrap.yml when k3s_restore_from_snapshot=true AND no live cluster
+# bootstrap.yml when k3s_cluster_restore_from_snapshot=true AND no live cluster
 # currently answers on the VIP (see the "Refuse to restore" safety-check
 # task in bootstrap.yml). This path is destructive by design — it wipes
 # this node's local etcd member — and must never run against a cluster
@@ -20,52 +20,52 @@
 
 - name: List objects in the etcd snapshot bucket (needed to resolve "latest")
   amazon.aws.s3_object_info:
-    bucket_name: "{{ etcd_s3_bucket }}"
-    endpoint_url: "http://{{ etcd_s3_endpoint }}"
+    bucket_name: "{{ k3s_cluster_etcd_s3_bucket }}"
+    endpoint_url: "http://{{ k3s_cluster_etcd_s3_endpoint }}"
     access_key: "{{ vault_minio_root_user }}"
     secret_key: "{{ vault_minio_root_password }}"
-  register: etcd_snapshot_objects
-  when: k3s_restore_snapshot_name == "latest"
+  register: k3s_cluster_etcd_snapshot_objects
+  when: k3s_cluster_restore_snapshot_name == "latest"
 
 - name: Resolve "latest" to the newest matching snapshot object key
   ansible.builtin.set_fact:
-    k3s_resolved_snapshot_name: >-
+    k3s_cluster_resolved_snapshot_name: >-
       {{
-        (etcd_snapshot_objects.s3_keys
-         | default(etcd_snapshot_objects.objects | default([]) | map(attribute='key') | list)
+        (k3s_cluster_etcd_snapshot_objects.s3_keys
+         | default(k3s_cluster_etcd_snapshot_objects.objects | default([]) | map(attribute='key') | list)
          | select('search', '^etcd-snapshot-')
          | list
          | sort
          | last)
       }}
-  when: k3s_restore_snapshot_name == "latest"
+  when: k3s_cluster_restore_snapshot_name == "latest"
 
 - name: Use the explicitly-provided snapshot name when one was given
   ansible.builtin.set_fact:
-    k3s_resolved_snapshot_name: "{{ k3s_restore_snapshot_name }}"
-  when: k3s_restore_snapshot_name != "latest"
+    k3s_cluster_resolved_snapshot_name: "{{ k3s_cluster_restore_snapshot_name }}"
+  when: k3s_cluster_restore_snapshot_name != "latest"
 
 - name: Fail loudly if no snapshot could be resolved
   ansible.builtin.fail:
     msg: >-
       Could not resolve a snapshot to restore from bucket
-      {{ etcd_s3_bucket }}. Check the bucket actually contains objects
+      {{ k3s_cluster_etcd_s3_bucket }}. Check the bucket actually contains objects
       matching 'etcd-snapshot-*'.
   when: >
-    k3s_resolved_snapshot_name is not defined or
-    (k3s_resolved_snapshot_name | length) == 0
+    k3s_cluster_resolved_snapshot_name is not defined or
+    (k3s_cluster_resolved_snapshot_name | length) == 0
 
 - name: Report which snapshot will be restored
   ansible.builtin.debug:
-    msg: "Restoring etcd on {{ inventory_hostname }} from snapshot: {{ k3s_resolved_snapshot_name }}"
+    msg: "Restoring etcd on {{ inventory_hostname }} from snapshot: {{ k3s_cluster_resolved_snapshot_name }}"
 
 - name: Write k3s config.yaml for post-restore control plane
   ansible.builtin.template:
     src: k3s-server-config.yaml.j2
-    dest: "{{ k3s_config_dir }}/config.yaml"
+    dest: "{{ k3s_cluster_config_dir }}/config.yaml"
     owner: root
     group: root
-    mode: '0600'
+    mode: "0600"
   vars:
     k3s_config_etcd_s3_use_secret: false
 
@@ -74,13 +74,13 @@
     curl -sfL https://get.k3s.io |
     INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
     --cluster-reset
-    --cluster-reset-restore-path="{{ k3s_resolved_snapshot_name }}"
-  register: restore_result
+    --cluster-reset-restore-path="{{ k3s_cluster_resolved_snapshot_name }}"
+  register: k3s_cluster_restore_result
 
 - name: Remove the one-shot cluster-reset flag from the persisted service env
   ansible.builtin.lineinfile:
     path: /etc/systemd/system/k3s.service.env
-    regexp: '^K3S_CLUSTER_RESET='
+    regexp: "^K3S_CLUSTER_RESET="
     state: absent
   ignore_errors: true
 
@@ -102,7 +102,7 @@
   ansible.builtin.file:
     path: /etc/rancher/k3s/cluster-initialized
     state: touch
-    mode: '0600'
+    mode: "0600"
 
 - name: Ensure K3s manifests directory exists for static manifests
   ansible.builtin.file:
@@ -110,11 +110,11 @@
     state: directory
     owner: root
     group: root
-    mode: '0755'
+    mode: "0755"
 
 - name: Apply kube-vip manifest (this node is now the control-plane identity)
   ansible.builtin.copy:
     src: files/kube-vip.yaml
     dest: /var/lib/rancher/k3s/server/manifests/kube-vip.yaml
     owner: root
-    mode: '0644'
+    mode: "0644"

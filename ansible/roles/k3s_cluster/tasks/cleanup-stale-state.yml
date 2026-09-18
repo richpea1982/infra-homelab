@@ -13,11 +13,11 @@
 - name: Check whether a prior k3s install is present on this node
   ansible.builtin.stat:
     path: /usr/local/bin/k3s-uninstall.sh
-  register: k3s_uninstall_script
+  register: k3s_cluster_uninstall_script
 
 - name: Run the upstream k3s-uninstall.sh if a prior install exists
   ansible.builtin.command: /usr/local/bin/k3s-uninstall.sh
-  when: k3s_uninstall_script.stat.exists
+  when: k3s_cluster_uninstall_script.stat.exists
 
 - name: Remove any leftover k3s state directories
   ansible.builtin.file:
@@ -31,6 +31,6 @@
   ansible.builtin.file:
     path: /etc/rancher/k3s
     state: directory
-    mode: '0755'
+    mode: "0755"
     owner: root
     group: root

@@ -1,0 +1,5 @@
+---
+# ansible-lint 26.8.0 contract. No skips, no excludes.
+skip_list: []
+exclude_paths:
+  - ansible/collections

@@ -3,9 +3,9 @@
 # cluster. Called once from rejoin.yml against a single live peer.
 #
 # Expects (set by the caller):
-#   eviction_peer      – inventory hostname of a live peer to run on
-#   target_node_name   – inventory_hostname of the node being rejoined
-#   target_node_ip     – ansible_host / IP of the node being rejoined
+#   k3s_cluster_eviction_peer      – inventory hostname of a live peer to run on
+#   k3s_cluster_target_node_name   – inventory_hostname of the node being rejoined
+#   k3s_cluster_target_node_ip     – ansible_host / IP of the node being rejoined
 #
 # Idempotent: if the member or Node object is already gone, no-op.
 
@@ -19,26 +19,26 @@
     else
       ls /var/lib/rancher/k3s/data/*/bin/etcdctl 2>/dev/null | head -1
     fi
-  register: etcdctl_path_result
-  delegate_to: "{{ eviction_peer }}"
+  register: k3s_cluster_etcdctl_path_result
+  delegate_to: "{{ k3s_cluster_eviction_peer }}"
   become: true
   changed_when: false
 
 - name: Fail if etcdctl is not available on the selected peer
   ansible.builtin.fail:
     msg: >-
-      etcdctl not found on {{ eviction_peer }}. Cannot evict stale member
-      for {{ target_node_name }} ({{ target_node_ip }}).
-  when: (etcdctl_path_result.stdout | default('') | trim | length) == 0
+      etcdctl not found on {{ k3s_cluster_eviction_peer }}. Cannot evict stale member
+      for {{ k3s_cluster_target_node_name }} ({{ k3s_cluster_target_node_ip }}).
+  when: (k3s_cluster_etcdctl_path_result.stdout | default('') | trim | length) == 0
 
-- name: Set etcdctl_bin fact
+- name: Set k3s_cluster_etcdctl_bin fact
   ansible.builtin.set_fact:
-    etcdctl_bin: "{{ etcdctl_path_result.stdout | trim }}"
+    k3s_cluster_etcdctl_bin: "{{ k3s_cluster_etcdctl_path_result.stdout | trim }}"
 
 - name: List etcd members on peer
   ansible.builtin.shell: |
     set -euo pipefail
-    "{{ etcdctl_bin }}" \
+    "{{ k3s_cluster_etcdctl_bin }}" \
       --cacert=/var/lib/rancher/k3s/server/tls/etcd/server-ca.crt \
       --cert=/var/lib/rancher/k3s/server/tls/etcd/client.crt \
       --key=/var/lib/rancher/k3s/server/tls/etcd/client.key \
@@ -46,8 +46,8 @@
       member list
   environment:
     ETCDCTL_API: "3"
-  register: etcd_member_list
-  delegate_to: "{{ eviction_peer }}"
+  register: k3s_cluster_etcd_member_list
+  delegate_to: "{{ k3s_cluster_eviction_peer }}"
   become: true
   changed_when: false
 
@@ -56,47 +56,47 @@
     set -euo pipefail
     # etcdctl member list default format:
     #   <hex-id>, <status>, <name>, <peerURLs>, <clientURLs>, <isLearner>
-    echo "{{ etcd_member_list.stdout }}" \
-      | awk -F',' -v ip="{{ target_node_ip }}" '
+    echo "{{ k3s_cluster_etcd_member_list.stdout }}" \
+      | awk -F',' -v ip="{{ k3s_cluster_target_node_ip }}" '
           $0 ~ ip {
             gsub(/^[ \t]+|[ \t]+$/, "", $1)
             print $1
             exit
           }
         '
-  register: stale_id_extract
+  register: k3s_cluster_stale_id_extract
   changed_when: false
 
-- name: Set stale_etcd_member_id fact
+- name: Set k3s_cluster_stale_etcd_member_id fact
   ansible.builtin.set_fact:
-    stale_etcd_member_id: "{{ stale_id_extract.stdout | default('') | trim }}"
+    k3s_cluster_stale_etcd_member_id: "{{ k3s_cluster_stale_id_extract.stdout | default('') | trim }}"
 
 - name: Remove stale etcd member (if present)
   ansible.builtin.shell: |
     set -euo pipefail
-    "{{ etcdctl_bin }}" \
+    "{{ k3s_cluster_etcdctl_bin }}" \
       --cacert=/var/lib/rancher/k3s/server/tls/etcd/server-ca.crt \
       --cert=/var/lib/rancher/k3s/server/tls/etcd/client.crt \
       --key=/var/lib/rancher/k3s/server/tls/etcd/client.key \
       --endpoints=https://127.0.0.1:2379 \
-      member remove "{{ stale_etcd_member_id }}"
+      member remove "{{ k3s_cluster_stale_etcd_member_id }}"
   environment:
     ETCDCTL_API: "3"
-  delegate_to: "{{ eviction_peer }}"
+  delegate_to: "{{ k3s_cluster_eviction_peer }}"
   become: true
-  register: etcd_remove_result
+  register: k3s_cluster_etcd_remove_result
   # "member not found" is success (already gone)
   failed_when:
-    - etcd_remove_result.rc != 0
-    - "'member not found' not in (etcd_remove_result.stderr | default(''))"
+    - k3s_cluster_etcd_remove_result.rc != 0
+    - "'member not found' not in (k3s_cluster_etcd_remove_result.stderr | default(''))"
   when:
-    - (stale_etcd_member_id | length) > 0
-    - (stale_etcd_member_id | regex_search('^[0-9a-fA-F]+$')) is not none
+    - (k3s_cluster_stale_etcd_member_id | length) > 0
+    - (k3s_cluster_stale_etcd_member_id | regex_search('^[0-9a-fA-F]+$')) is not none
 
 - name: Delete Kubernetes Node object for the rejoining host
   ansible.builtin.command: >
-    k3s kubectl delete node {{ target_node_name }} --ignore-not-found
-  delegate_to: "{{ eviction_peer }}"
+    k3s kubectl delete node {{ k3s_cluster_target_node_name }} --ignore-not-found
+  delegate_to: "{{ k3s_cluster_eviction_peer }}"
   become: true
-  register: kubectl_delete_result
-  changed_when: "'deleted' in (kubectl_delete_result.stdout | default(''))"
+  register: k3s_cluster_kubectl_delete_result
+  changed_when: "'deleted' in (k3s_cluster_kubectl_delete_result.stdout | default(''))"

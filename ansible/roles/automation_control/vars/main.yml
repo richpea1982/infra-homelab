@@ -1,6 +1,6 @@
 ---
 # Essential system packages
-essential_packages:
+automation_control_essential_packages:
   - apt-transport-https
   - ca-certificates
   - curl
@@ -11,11 +11,11 @@ essential_packages:
   - sqlite3
 
 # Terraform configuration
-terraform_repo_url: "https://apt.releases.hashicorp.com"
-terraform_gpg_url: "https://apt.releases.hashicorp.com/gpg"
+automation_control_terraform_repo_url: "https://apt.releases.hashicorp.com"
+automation_control_terraform_gpg_url: "https://apt.releases.hashicorp.com/gpg"
 
 # Semaphore dynamic downloader
-semaphore_api_url: "https://api.github.com/repos/semaphoreui/semaphore/releases/latest"
+automation_control_semaphore_api_url: "https://api.github.com/repos/semaphoreui/semaphore/releases/latest"
 # Semaphore user
-semaphore_user: "rich"
-semaphore_email: "rpearsall1982@gmail.com"
+automation_control_semaphore_user: "rich"
+automation_control_semaphore_email: "rpearsall1982@gmail.com"

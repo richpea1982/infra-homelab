@@ -1,158 +1,159 @@
 ---
 - name: Update apt cache and install base essentials
-  apt:
-    name: "{{ essential_packages }}"
+  ansible.builtin.apt:
+    name: "{{ automation_control_essential_packages }}"
     state: present
-    update_cache: yes
+    update_cache: true
 
 - name: Ensure keyrings directory exists
-  file:
+  ansible.builtin.file:
     path: /usr/share/keyrings
     state: directory
-    mode: '0755'
+    mode: "0755"
 
 # --- Install Terraform ---
 - name: Download HashiCorp GPG apt Key
-  get_url:
-    url: "{{ terraform_gpg_url }}"
+  ansible.builtin.get_url:
+    url: "{{ automation_control_terraform_gpg_url }}"
     dest: /usr/share/keyrings/hashicorp-archive-keyring.gpg
-    mode: '0644'
+    mode: "0644"
 
 - name: Add HashiCorp Repository
-  apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] {{ terraform_repo_url }} {{ ansible_distribution_release }} main"
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] {{
+      automation_control_terraform_repo_url }} {{ ansible_distribution_release }} main"
     state: present
     filename: hashicorp
 
 - name: Install Terraform
-  apt:
+  ansible.builtin.apt:
     name: terraform
     state: present
 
 # --- Install Ansible via Pipx (Debian 13 PEP 668 Compliant) ---
 - name: Install pipx via apt
-  apt:
+  ansible.builtin.apt:
     name: pipx
     state: present
 
 - name: Check if pipx global path is already in environment
-  command: grep -q "/usr/local/bin" /etc/environment
-  register: pipx_path_check
+  ansible.builtin.command: grep -q "/usr/local/bin" /etc/environment
+  register: automation_control_pipx_path_check
   failed_when: false
   changed_when: false
 
 - name: Ensure pipx global path is configured for the user
-  command: pipx ensurepath --global
+  ansible.builtin.command: pipx ensurepath --global
   become: true
-  when: pipx_path_check.rc != 0
+  when: automation_control_pipx_path_check.rc != 0
 
 - name: Install Ansible core and community collections via pipx
-  command: pipx install --global --include-deps ansible
+  ansible.builtin.command: pipx install --global --include-deps ansible
   args:
     creates: /usr/local/bin/ansible-playbook
 
 # --- Install Ansible-Semaphore (Official GitHub Package Method) ---
 - name: Fetch latest Semaphore release metadata
-  uri:
-    url: "{{ semaphore_api_url }}"
-    return_content: yes
-  register: semaphore_meta
+  ansible.builtin.uri:
+    url: "{{ automation_control_semaphore_api_url }}"
+    return_content: true
+  register: automation_control_semaphore_meta
 
 - name: Extract exact download URL for the amd64 deb package
-  set_fact:
-    semaphore_deb_url: >-
+  ansible.builtin.set_fact:
+    automation_control_semaphore_deb_url: >-
       {{
-        (semaphore_meta.content | from_json).assets
+        (automation_control_semaphore_meta.content | from_json).assets
         | selectattr('name', 'search', '_linux_amd64.deb')
         | map(attribute='browser_download_url')
         | first
       }}
 
 - name: Download latest Semaphore .deb package dynamically
-  get_url:
-    url: "{{ semaphore_deb_url }}"
+  ansible.builtin.get_url:
+    url: "{{ automation_control_semaphore_deb_url }}"
     dest: "/tmp/semaphore_latest_amd64.deb"
-    mode: '0644'
+    mode: "0644"
 
 - name: Install Semaphore via local apt package file
-  apt:
+  ansible.builtin.apt:
     deb: "/tmp/semaphore_latest_amd64.deb"
     state: present
 
 # --- Configure & Initialize Semaphore ---
 - name: Ensure Semaphore configuration directory exists
-  file:
+  ansible.builtin.file:
     path: /etc/semaphore
     state: directory
     owner: root
     group: root
-    mode: '0755'
+    mode: "0755"
 
 - name: Ensure Data directory exists
-  file:
+  ansible.builtin.file:
     path: /var/lib/semaphore
     state: directory
     owner: root
     group: root
-    mode: '0755'
+    mode: "0755"
 
 - name: Ensure SQLite database file physically exists
-  file:
+  ansible.builtin.file:
     path: /var/lib/semaphore/database.sqlite
     state: touch
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
     modification_time: preserve
     access_time: preserve
 
 - name: Deploy Semaphore configuration from Vault template
-  template:
+  ansible.builtin.template:
     src: semaphore_config.json.j2
     dest: /etc/semaphore/config.json
     owner: root
     group: root
-    mode: '0640'
+    mode: "0640"
 
 - name: Run Semaphore database migrations
-  command: /usr/bin/semaphore migrate --config /etc/semaphore/config.json
-  register: migrate_result
-  changed_when: migrate_result.rc == 0
+  ansible.builtin.command: /usr/bin/semaphore migrate --config /etc/semaphore/config.json
+  register: automation_control_migrate_result
+  changed_when: automation_control_migrate_result.rc == 0
 
 - name: Initialize Semaphore Admin User
-  command: >
+  ansible.builtin.command: >
     /usr/bin/semaphore user add --admin
     --login rich
-    --name '{{ semaphore_user }}'
-    --email '{{ semaphore_email }}'
+    --name '{{ automation_control_semaphore_user }}'
+    --email '{{ automation_control_semaphore_email }}'
     --password '{{ vault_semaphore_admin_password }}'
     --config /etc/semaphore/config.json
-  register: user_result
+  register: automation_control_user_result
   failed_when:
-    - user_result.rc != 0
-    - "'user already exists' not in user_result.stderr"
-    - "'user already exists' not in user_result.stdout"
-    - "'UNIQUE constraint failed' not in user_result.stderr" # Catches the Go panic
+    - automation_control_user_result.rc != 0
+    - "'user already exists' not in automation_control_user_result.stderr"
+    - "'user already exists' not in automation_control_user_result.stdout"
+    - "'UNIQUE constraint failed' not in automation_control_user_result.stderr" # Catches the Go panic
   changed_when:
-    - user_result.rc == 0
+    - automation_control_user_result.rc == 0
 
 - name: Force update admin password if user already exists
-  command: >
+  ansible.builtin.command: >
     /usr/bin/semaphore user change-by-login
     --login rich
     --password '{{ vault_semaphore_admin_password }}'
     --config /etc/semaphore/config.json
   when: >
-    user_result.rc != 0 and
-    ('user already exists' in user_result.stderr or
-     'user already exists' in user_result.stdout or
-     'UNIQUE constraint failed' in user_result.stderr)
+    automation_control_user_result.rc != 0 and
+    ('user already exists' in automation_control_user_result.stderr or
+     'user already exists' in automation_control_user_result.stdout or
+     'UNIQUE constraint failed' in automation_control_user_result.stderr)
   changed_when: true
 
 - name: Deploy Semaphore Systemd Service File
-  copy:
+  ansible.builtin.copy:
     dest: /etc/systemd/system/semaphore.service
-    mode: '0644'
+    mode: "0644"
     content: |
       [Unit]
       Description=Ansible Semaphore UI
@@ -166,11 +167,11 @@
 
       [Install]
       WantedBy=multi-user.target
-  register: systemd_file
+  register: automation_control_systemd_file
 
 - name: Enable and start Semaphore service
-  systemd:
+  ansible.builtin.systemd:
     name: semaphore
     state: started
-    enabled: yes
-    daemon_reload: "{{ systemd_file.changed }}"
+    enabled: true
+    daemon_reload: "{{ automation_control_systemd_file.changed }}"

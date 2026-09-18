@@ -1,5 +1,5 @@
 ---
-- name: restart alert-router
-  systemd:
+- name: Restart alert-router
+  ansible.builtin.systemd:
     name: alert-router
     state: restarted

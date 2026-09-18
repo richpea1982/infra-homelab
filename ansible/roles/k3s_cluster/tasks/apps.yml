@@ -1,36 +1,36 @@
 ---
 - name: Create local execution bin paths for Helm management
-  file:
+  ansible.builtin.file:
     path: /root/.kube
     state: directory
-    mode: '0700'
+    mode: "0700"
 
 - name: Create symbolic link to cluster credentials for default actions
-  file:
-    src: "{{ k3s_kubeconfig_path }}"
+  ansible.builtin.file:
+    src: "{{ k3s_cluster_kubeconfig_path }}"
     dest: /root/.kube/config
     state: link
 
 - name: Install helm components on control host
-  unarchive:
+  ansible.builtin.unarchive:
     src: "https://get.helm.sh/helm-v3.14.0-linux-amd64.tar.gz"
     dest: /tmp
-    remote_src: yes
+    remote_src: true
 
 - name: Move helm binary into global pathing execution spots
-  copy:
+  ansible.builtin.copy:
     src: /tmp/linux-amd64/helm
     dest: /usr/local/bin/helm
-    mode: '0755'
-    remote_src: yes
+    mode: "0755"
+    remote_src: true
 
 - name: Ensure python3-pip is available for the Kubernetes Python client
-  apt:
+  ansible.builtin.apt:
     name: python3-pip
     state: present
 
 - name: Install Kubernetes Python client (required by k8s / k8s_info modules)
-  pip:
+  ansible.builtin.pip:
     name: kubernetes
     state: present
     extra_args: "--break-system-packages --ignore-installed"
@@ -65,8 +65,8 @@
     create_namespace: true
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-  register: result
-  until: result is succeeded
+  register: k3s_cluster_result
+  until: k3s_cluster_result is succeeded
   retries: 20
   delay: 15
 
@@ -91,10 +91,10 @@
     namespace: calico-system
     label_selectors:
       - "k8s-app=calico-node"
-  register: calico_pods
+  register: k3s_cluster_calico_pods
   until: >
-    calico_pods.resources | length > 0 and
-    calico_pods.resources | map(attribute='status.phase') | unique == ['Running']
+    k3s_cluster_calico_pods.resources | length > 0 and
+    k3s_cluster_calico_pods.resources | map(attribute='status.phase') | unique == ['Running']
   retries: 30
   delay: 10
 
@@ -139,10 +139,10 @@
     namespace: argocd
     label_selectors:
       - "app.kubernetes.io/name=argocd-application-controller"
-  register: argocd_pods
+  register: k3s_cluster_argocd_pods
   until: >
-    argocd_pods.resources | length > 0 and
-    argocd_pods.resources | map(attribute='status.phase') | unique == ['Running']
+    k3s_cluster_argocd_pods.resources | length > 0 and
+    k3s_cluster_argocd_pods.resources | map(attribute='status.phase') | unique == ['Running']
   retries: 30
   delay: 10
 
@@ -178,10 +178,10 @@
 # Idempotent: openssh_keypair does not regenerate an existing key, so the
 # public key registered with GitHub stays valid across every subsequent run.
 - name: Ensure directory for ArgoCD's GitOps deploy key exists
-  file:
+  ansible.builtin.file:
     path: /etc/ansible-secrets
     state: directory
-    mode: '0700'
+    mode: "0700"
     owner: root
     group: root
 
@@ -190,12 +190,12 @@
     path: /etc/ansible-secrets/argocd_k3s_deploy
     type: ed25519
     comment: "argocd-k3s-gitops"
-    mode: '0600'
+    mode: "0600"
 
 - name: Read the generated private key from the remote node
   ansible.builtin.slurp:
     src: /etc/ansible-secrets/argocd_k3s_deploy
-  register: argocd_priv_key
+  register: k3s_cluster_argocd_priv_key
 
 - name: Register the K3s GitOps repo credentials with ArgoCD
   kubernetes.core.k8s:
@@ -211,10 +211,10 @@
       stringData:
         type: git
         url: "{{ gitops_repo_url }}"
-        sshPrivateKey: "{{ argocd_priv_key['content'] | b64decode }}"
+        sshPrivateKey: "{{ k3s_cluster_argocd_priv_key['content'] | b64decode }}"
 
 - name: Override default StorageClass reclaim policy
-  include_tasks: storageclass-retain.yml
+  ansible.builtin.include_tasks: storageclass-retain.yml
 
 # Prep and setup for etcs snapshots to s3 bucket
 - name: Ensure boto3/botocore are available for S3 bucket management
@@ -227,9 +227,9 @@
 
 - name: Ensure a MinIO bucket exists for etcd snapshots
   amazon.aws.s3_bucket:
-    name: "{{ etcd_s3_bucket }}"
+    name: "{{ k3s_cluster_etcd_s3_bucket }}"
     state: present
-    endpoint_url: "http://{{ etcd_s3_endpoint }}"
+    endpoint_url: "http://{{ k3s_cluster_etcd_s3_endpoint }}"
     aws_access_key: "{{ vault_minio_root_user }}"
     aws_secret_key: "{{ vault_minio_root_password }}"
 
@@ -240,12 +240,12 @@
       apiVersion: v1
       kind: Secret
       metadata:
-        name: "{{ etcd_s3_config_secret }}"
+        name: "{{ k3s_cluster_etcd_s3_config_secret }}"
         namespace: kube-system
       type: Opaque
       stringData:
-        etcd-s3-endpoint: "{{ etcd_s3_endpoint }}"
+        etcd-s3-endpoint: "{{ k3s_cluster_etcd_s3_endpoint }}"
         etcd-s3-insecure: "true"
-        etcd-s3-bucket: "{{ etcd_s3_bucket }}"
+        etcd-s3-bucket: "{{ k3s_cluster_etcd_s3_bucket }}"
         etcd-s3-access-key: "{{ vault_minio_root_user }}"
         etcd-s3-secret-key: "{{ vault_minio_root_password }}"

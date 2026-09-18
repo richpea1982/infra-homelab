@@ -5,7 +5,7 @@
     dest: /etc/apt/sources.list.d/debian.sources
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   register: apt_mirror_sources
 
 # Debian cloud images (and older bookworm LXCs) may still ship a classic
@@ -15,14 +15,14 @@
 - name: Check for a legacy sources.list
   ansible.builtin.stat:
     path: /etc/apt/sources.list
-  register: legacy_sources_list
+  register: apt_mirror_legacy_sources_list
 
 - name: Disable legacy sources.list if present and non-empty
   ansible.builtin.command:
     cmd: mv /etc/apt/sources.list /etc/apt/sources.list.disabled-by-apt-mirror
   when:
-    - legacy_sources_list.stat.exists
-    - legacy_sources_list.stat.size > 0
+    - apt_mirror_legacy_sources_list.stat.exists
+    - apt_mirror_legacy_sources_list.stat.size > 0
   changed_when: true
 
 - name: Refresh apt cache against the new sources
