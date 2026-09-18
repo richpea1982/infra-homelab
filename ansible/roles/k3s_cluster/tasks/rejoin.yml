@@ -93,11 +93,28 @@
     k3s_config_server_url: "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
   when: not k3s_cluster_already_running
 
+- name: Fetch the k3s installer script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: "{{ k3s_cluster_installer_script }}"
+    mode: "0755"
+
+- name: Check whether the k3s binary is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_cluster_binary
+
 - name: Join existing cluster via the VIP
-  ansible.builtin.shell: >
-    curl -sfL https://get.k3s.io |
-    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
-  when: not k3s_cluster_already_running
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_cluster_installer_script }}"
+      - server
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  changed_when: true
+  when:
+    - not k3s_cluster_already_running
+    - not k3s_cluster_binary.stat.exists
 
 - name: Ensure k3s service is verified running
   ansible.builtin.systemd:

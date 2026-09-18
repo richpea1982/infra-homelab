@@ -3,6 +3,11 @@
 k3s_cluster_config_dir: "/etc/rancher/k3s"
 k3s_cluster_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
 
+# Upstream k3s installer script, fetched once per node by whichever task
+# file performs an install. get_url is idempotent so these re-fetches are
+# a no-op across the join/rejoin/init/restore paths.
+k3s_cluster_installer_script: "/var/tmp/k3s-install.sh"
+
 # etcd snapshot to S3 (MinIO on the NAS)
 k3s_cluster_etcd_s3_config_secret: "k3s-etcd-snapshot-s3-config"
 k3s_cluster_etcd_snapshot_schedule_cron: "0 */6 * * *"

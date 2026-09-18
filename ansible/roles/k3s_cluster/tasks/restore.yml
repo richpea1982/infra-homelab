@@ -69,13 +69,23 @@
   vars:
     k3s_config_etcd_s3_use_secret: false
 
+- name: Fetch the k3s installer script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: "{{ k3s_cluster_installer_script }}"
+    mode: "0755"
+
 - name: Restore etcd from the resolved S3 snapshot and bring the control plane up
-  ansible.builtin.shell: >
-    curl -sfL https://get.k3s.io |
-    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
-    --cluster-reset
-    --cluster-reset-restore-path="{{ k3s_cluster_resolved_snapshot_name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_cluster_installer_script }}"
+      - server
+      - --cluster-reset
+      - "--cluster-reset-restore-path={{ k3s_cluster_resolved_snapshot_name }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
   register: k3s_cluster_restore_result
+  changed_when: true
 
 - name: Check whether the k3s service env file exists
   ansible.builtin.stat:

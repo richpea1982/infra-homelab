@@ -34,20 +34,44 @@
   until: (k3s_cluster_vip_probe.status | default(0)) in [200, 401, 403]
   when: not k3s_cluster_already_running
 
+- name: Fetch the k3s installer script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: "{{ k3s_cluster_installer_script }}"
+    mode: "0755"
+
+- name: Check whether the k3s binary is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_cluster_binary
+
 - name: Join existing cluster via the VIP
-  ansible.builtin.shell: >
-    curl -sfL https://get.k3s.io |
-    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
-    --server "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
-    --token "{{ vault_k3s_cluster_token }}"
-    --flannel-backend=none
-    --disable traefik
-    --tls-san "{{ k3s_api_server }}"
-    --etcd-s3
-    --etcd-s3-config-secret "{{ k3s_cluster_etcd_s3_config_secret }}"
-    --etcd-snapshot-schedule-cron "{{ k3s_cluster_etcd_snapshot_schedule_cron }}"
-    --etcd-snapshot-retention "{{ k3s_cluster_etcd_snapshot_retention }}"
-  when: not k3s_cluster_already_running
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_cluster_installer_script }}"
+      - server
+      - --server
+      - "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
+      - --token
+      - "{{ vault_k3s_cluster_token }}"
+      - --flannel-backend=none
+      - --disable
+      - traefik
+      - --tls-san
+      - "{{ k3s_api_server }}"
+      - --etcd-s3
+      - --etcd-s3-config-secret
+      - "{{ k3s_cluster_etcd_s3_config_secret }}"
+      - --etcd-snapshot-schedule-cron
+      - "{{ k3s_cluster_etcd_snapshot_schedule_cron }}"
+      - --etcd-snapshot-retention
+      - "{{ k3s_cluster_etcd_snapshot_retention }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  changed_when: true
+  when:
+    - not k3s_cluster_already_running
+    - not k3s_cluster_binary.stat.exists
 
 - name: Ensure secondary k3s service engines are verified running
   ansible.builtin.systemd:

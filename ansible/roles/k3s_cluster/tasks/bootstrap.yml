@@ -71,23 +71,50 @@
       {{ (k3s_cluster_restore_from_snapshot | default(false)) and not (k3s_cluster_cluster_exists | default(false))
          and not k3s_cluster_already_running }}
 
+# The paths below (A rejoin / B init) and their join/restore siblings used
+# to pipe curl straight into sh. Fetch the upstream installer once per node
+# (idempotent) and invoke it with the command module so the flags stay
+# explicit, reviewable, and free of shell quoting.
+- name: Fetch the k3s installer script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: "{{ k3s_cluster_installer_script }}"
+    mode: "0755"
+
+- name: Check whether the k3s binary is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_cluster_binary
+
 # --- Path A: rejoin existing cluster (this node was rebuilt; cluster survived on the VIP) ---
 - name: Rejoin existing cluster (this node was rebuilt; cluster survived on the VIP)
-  ansible.builtin.shell: >
-    curl -sfL https://get.k3s.io |
-    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
-    --server "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
-    --token "{{ vault_k3s_cluster_token }}"
-    --flannel-backend=none
-    --disable traefik
-    --tls-san "{{ k3s_api_server }}"
-    --etcd-s3
-    --etcd-s3-config-secret "{{ k3s_cluster_etcd_s3_config_secret }}"
-    --etcd-snapshot-schedule-cron "{{ k3s_cluster_etcd_snapshot_schedule_cron }}"
-    --etcd-snapshot-retention "{{ k3s_cluster_etcd_snapshot_retention }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_cluster_installer_script }}"
+      - server
+      - --server
+      - "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
+      - --token
+      - "{{ vault_k3s_cluster_token }}"
+      - --flannel-backend=none
+      - --disable
+      - traefik
+      - --tls-san
+      - "{{ k3s_api_server }}"
+      - --etcd-s3
+      - --etcd-s3-config-secret
+      - "{{ k3s_cluster_etcd_s3_config_secret }}"
+      - --etcd-snapshot-schedule-cron
+      - "{{ k3s_cluster_etcd_snapshot_schedule_cron }}"
+      - --etcd-snapshot-retention
+      - "{{ k3s_cluster_etcd_snapshot_retention }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  changed_when: true
   when:
     - not k3s_cluster_already_running
     - k3s_cluster_cluster_exists | default(false)
+    - not k3s_cluster_binary.stat.exists
 
 # --- Path B: genuinely no cluster exists and no restore was requested — this node initializes fresh ---
 - name: Check for a local cluster-init marker (belt-and-braces against accidental re-init)
@@ -100,20 +127,31 @@
     - not (k3s_cluster_restore_from_snapshot | default(false))
 
 - name: Initialize fresh HA control plane via cluster-init
-  ansible.builtin.shell: >
-    curl -sfL https://get.k3s.io |
-    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
-    --cluster-init
-    --token "{{ vault_k3s_cluster_token }}"
-    --flannel-backend=none
-    --disable traefik
-    --disable servicelb
-    --tls-san "{{ k3s_api_server }}"
-    --etcd-s3
-    --etcd-s3-config-secret "{{ k3s_cluster_etcd_s3_config_secret }}"
-    --etcd-snapshot-schedule-cron "{{ k3s_cluster_etcd_snapshot_schedule_cron }}"
-    --etcd-snapshot-retention "{{ k3s_cluster_etcd_snapshot_retention }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_cluster_installer_script }}"
+      - server
+      - --cluster-init
+      - --token
+      - "{{ vault_k3s_cluster_token }}"
+      - --flannel-backend=none
+      - --disable
+      - traefik
+      - --disable
+      - servicelb
+      - --tls-san
+      - "{{ k3s_api_server }}"
+      - --etcd-s3
+      - --etcd-s3-config-secret
+      - "{{ k3s_cluster_etcd_s3_config_secret }}"
+      - --etcd-snapshot-schedule-cron
+      - "{{ k3s_cluster_etcd_snapshot_schedule_cron }}"
+      - --etcd-snapshot-retention
+      - "{{ k3s_cluster_etcd_snapshot_retention }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
   register: k3s_cluster_cluster_init_result
+  changed_when: true
   when: k3s_cluster_cluster_init_marker.stat is defined and not k3s_cluster_cluster_init_marker.stat.exists
 
 - name: Record cluster-init marker so a later re-run can't accidentally re-initialize
