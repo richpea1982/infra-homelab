@@ -85,6 +85,7 @@
   delegate_to: "{{ k3s_cluster_eviction_peer }}"
   become: true
   register: k3s_cluster_etcd_remove_result
+  changed_when: true
   # "member not found" is success (already gone)
   failed_when:
     - k3s_cluster_etcd_remove_result.rc != 0

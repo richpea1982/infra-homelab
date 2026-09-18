@@ -107,6 +107,7 @@
 
 - name: Allow the WireGuard UDP port through the host firewall
   ansible.builtin.command: "iptables -A INPUT -p udp --dport {{ wg_relay_port }} -j ACCEPT"
+  changed_when: true
   when: wg_relay_wg_input_rule_check.rc != 0
 
 - name: Check whether the FORWARD-in rule for wg0 already exists
@@ -117,6 +118,7 @@
 
 - name: Allow forwarding in through the WireGuard interface
   ansible.builtin.command: "iptables -A FORWARD -i {{ wg_relay_interface }} -j ACCEPT"
+  changed_when: true
   when: wg_relay_wg_forward_in_check.rc != 0
 
 - name: Check whether the FORWARD-out rule for wg0 already exists
@@ -127,6 +129,7 @@
 
 - name: Allow forwarding out through the WireGuard interface
   ansible.builtin.command: "iptables -A FORWARD -o {{ wg_relay_interface }} -j ACCEPT"
+  changed_when: true
   when: wg_relay_wg_forward_out_check.rc != 0
 
 - name: Persist iptables rules across reboots

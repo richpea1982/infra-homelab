@@ -17,6 +17,7 @@
 
 - name: Run the upstream k3s-uninstall.sh if a prior install exists
   ansible.builtin.command: /usr/local/bin/k3s-uninstall.sh
+  changed_when: true
   when: k3s_cluster_uninstall_script.stat.exists
 
 - name: Remove any leftover k3s state directories

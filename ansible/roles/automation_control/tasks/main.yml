@@ -45,6 +45,7 @@
 - name: Ensure pipx global path is configured for the user
   ansible.builtin.command: pipx ensurepath --global
   become: true
+  changed_when: true
   when: automation_control_pipx_path_check.rc != 0
 
 - name: Install Ansible core and community collections via pipx
