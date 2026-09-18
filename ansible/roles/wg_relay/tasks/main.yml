@@ -76,7 +76,7 @@
     group: root
     mode: "0600"
   no_log: true
-  notify: restart wireguard
+  notify: Restart wireguard
 
 - name: Configure persistent IPv4 forwarding (needed to route between WireGuard peers)
   ansible.builtin.copy:

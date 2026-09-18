@@ -14,7 +14,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: restart alert-router
+  notify: Restart alert-router
 
 - name: Deploy Python requirements list
   ansible.builtin.copy:
@@ -23,7 +23,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: restart alert-router
+  notify: Restart alert-router
 
 - name: Ensure python3-venv is available
   ansible.builtin.apt:
@@ -39,7 +39,7 @@
   ansible.builtin.pip:
     requirements: /opt/alert-router/requirements.txt
     virtualenv: /opt/alert-router/venv
-  notify: restart alert-router
+  notify: Restart alert-router
 
 - name: Ensure alert-router state directory exists
   ansible.builtin.file:
@@ -57,7 +57,7 @@
     group: root
     mode: "0600"
   no_log: true
-  notify: restart alert-router
+  notify: Restart alert-router
 
 - name: Deploy alert-router systemd unit
   ansible.builtin.template:
