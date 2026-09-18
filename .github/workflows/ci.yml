@@ -30,17 +30,25 @@ jobs:
           python-version: "3.x"
       - run: pip install -r requirements-lint.txt
       - run: ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections
+      - name: Prepare vault password file
+        env:
+          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          install -m 0600 /dev/null /tmp/vault_pass
+          printf '%s' "$ANSIBLE_VAULT_PASSWORD" > /tmp/vault_pass
       - name: YAML lint
         run: yamllint .
       - name: Ansible lint
         env:
-          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          ANSIBLE_CONFIG: ansible/ansible.cfg
+          ANSIBLE_VAULT_PASSWORD_FILE: /tmp/vault_pass
         run: ansible-lint --project-dir ansible
       - name: Syntax check
         env:
-          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          ANSIBLE_CONFIG: ansible/ansible.cfg
+          ANSIBLE_VAULT_PASSWORD_FILE: /tmp/vault_pass
         run: >
           ansible-playbook --syntax-check
-          -c ansible/ansible.cfg
+          --config-file ansible/ansible.cfg
           -i ansible/hosts/hosts.ini
-          ansible/playbooks/*.yml
+          ansible/playbooks/*.yml ansible/playbooks/*.yaml
