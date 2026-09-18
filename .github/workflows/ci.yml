@@ -30,7 +30,7 @@ jobs:
           python-version: "3.x"
       - run: pip install ansible-lint yamllint
       - name: YAML lint
-        run: yamllint -d relaxed .
+        run: yamllint .
       - name: Ansible lint
         run: ansible-lint --project-dir ansible
       - name: Syntax check

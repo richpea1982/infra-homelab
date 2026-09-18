@@ -30,7 +30,7 @@
 
 - name: Deploy MinIO environment configuration
   no_log: true
-  copy: 
+  copy:
     dest: /etc/minio/minio.env
     content: |
       MINIO_VOLUMES="{{ nas_mount_point_base }}/minio"

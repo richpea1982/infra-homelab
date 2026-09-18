@@ -121,31 +121,31 @@
 
 - name: Initialize Semaphore Admin User
   command: >
-    /usr/bin/semaphore user add --admin 
-    --login rich 
-    --name '{{ semaphore_user }}' 
-    --email '{{ semaphore_email }}' 
-    --password '{{ vault_semaphore_admin_password }}' 
+    /usr/bin/semaphore user add --admin
+    --login rich
+    --name '{{ semaphore_user }}'
+    --email '{{ semaphore_email }}'
+    --password '{{ vault_semaphore_admin_password }}'
     --config /etc/semaphore/config.json
   register: user_result
-  failed_when: 
-    - user_result.rc != 0 
+  failed_when:
+    - user_result.rc != 0
     - "'user already exists' not in user_result.stderr"
     - "'user already exists' not in user_result.stdout"
     - "'UNIQUE constraint failed' not in user_result.stderr" # Catches the Go panic
-  changed_when: 
+  changed_when:
     - user_result.rc == 0
 
 - name: Force update admin password if user already exists
   command: >
-    /usr/bin/semaphore user change-by-login 
-    --login rich 
-    --password '{{ vault_semaphore_admin_password }}' 
+    /usr/bin/semaphore user change-by-login
+    --login rich
+    --password '{{ vault_semaphore_admin_password }}'
     --config /etc/semaphore/config.json
   when: >
-    user_result.rc != 0 and 
-    ('user already exists' in user_result.stderr or 
-     'user already exists' in user_result.stdout or 
+    user_result.rc != 0 and
+    ('user already exists' in user_result.stderr or
+     'user already exists' in user_result.stdout or
      'UNIQUE constraint failed' in user_result.stderr)
   changed_when: true
 

@@ -20,7 +20,7 @@
 
 - name: Report reboot status
   ansible.builtin.debug:
-    msg: "{{ inventory_hostname }} requires a reboot" 
+    msg: "{{ inventory_hostname }} requires a reboot"
   when: reboot_required_file.stat.exists
 
 - name: Reboot if required and allowed
