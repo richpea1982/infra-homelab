@@ -1,10 +1,17 @@
 ---
+- name: Check whether the default local-path StorageClass already exists
+  kubernetes.core.k8s_info:
+    kind: StorageClass
+    name: local-path
+  register: k3s_cluster_local_path_sc
+  failed_when: false
+
 - name: Delete default local-path StorageClass
   kubernetes.core.k8s:
     state: absent
     kind: StorageClass
     name: local-path
-  ignore_errors: true
+  when: k3s_cluster_local_path_sc.resources | length > 0
 
 - name: Apply retained StorageClass
   kubernetes.core.k8s:

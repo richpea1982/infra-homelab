@@ -77,12 +77,17 @@
     --cluster-reset-restore-path="{{ k3s_cluster_resolved_snapshot_name }}"
   register: k3s_cluster_restore_result
 
+- name: Check whether the k3s service env file exists
+  ansible.builtin.stat:
+    path: /etc/systemd/system/k3s.service.env
+  register: k3s_cluster_env_file
+
 - name: Remove the one-shot cluster-reset flag from the persisted service env
   ansible.builtin.lineinfile:
     path: /etc/systemd/system/k3s.service.env
     regexp: "^K3S_CLUSTER_RESET="
     state: absent
-  ignore_errors: true
+  when: k3s_cluster_env_file.stat.exists
 
 - name: Reload systemd and ensure k3s is running cleanly post-restore
   ansible.builtin.systemd:
