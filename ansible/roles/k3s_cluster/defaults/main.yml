@@ -1,29 +1,34 @@
 ---
 # Runtime working configurations
-k3s_config_dir: "/etc/rancher/k3s"
-k3s_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+k3s_cluster_config_dir: "/etc/rancher/k3s"
+k3s_cluster_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+
+# Upstream k3s installer script, fetched once per node by whichever task
+# file performs an install. get_url is idempotent so these re-fetches are
+# a no-op across the join/rejoin/init/restore paths.
+k3s_cluster_installer_script: "/var/tmp/k3s-install.sh"
 
 # etcd snapshot to S3 (MinIO on the NAS)
-etcd_s3_config_secret: "k3s-etcd-snapshot-s3-config"
-etcd_snapshot_schedule_cron: "0 */6 * * *"
-etcd_snapshot_retention: 5
-etcd_s3_endpoint: "10.0.10.15:9000"
-etcd_s3_bucket: "k3s-etcd-snapshots"
+k3s_cluster_etcd_s3_config_secret: "k3s-etcd-snapshot-s3-config"
+k3s_cluster_etcd_snapshot_schedule_cron: "0 */6 * * *"
+k3s_cluster_etcd_snapshot_retention: 5
+k3s_cluster_etcd_s3_endpoint: "10.0.10.15:9000"
+k3s_cluster_etcd_s3_bucket: "k3s-etcd-snapshots"
 
 # --- Disaster recovery: restore from an S3-hosted etcd snapshot ---
 # Opt-in only — never triggered automatically by a normal playbook run.
 # Pass explicitly, e.g.:
 #   ansible-playbook -i hosts/hosts.ini deploy_k3s.yml \
-#     -e k3s_restore_from_snapshot=true \
-#     -e k3s_restore_snapshot_name=latest
+#     -e k3s_cluster_restore_from_snapshot=true \
+#     -e k3s_cluster_restore_snapshot_name=latest
 # ...against a genuinely dead cluster (full quorum loss — this is NOT the
 # single-node-failure path, which is already handled by the existing VIP
 # probe / rejoin logic in bootstrap.yml and join.yml).
 # See tasks/restore.yml for the full flow and its safety checks.
-k3s_restore_from_snapshot: false
+k3s_cluster_restore_from_snapshot: false
 
 # "latest" resolves dynamically to the newest object in the S3 bucket
 # matching the "etcd-snapshot-" prefix. Pass an explicit snapshot object
 # name instead to restore a specific point in time rather than the most
 # recent one.
-k3s_restore_snapshot_name: "latest"
+k3s_cluster_restore_snapshot_name: "latest"

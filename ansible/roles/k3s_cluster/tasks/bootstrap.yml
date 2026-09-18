@@ -3,12 +3,16 @@
 - name: Check if K3s service is already active on this node
   ansible.builtin.systemd:
     name: k3s
-  register: k3s_local_status
+  register: k3s_cluster_local_status
   failed_when: false
+
+- name: Set fact — expose the active state of the local K3s service
+  ansible.builtin.set_fact:
+    k3s_cluster_local_state: "{{ k3s_cluster_local_status.status | default({}) }}"
 
 - name: Set fact — is K3s already running here?
   ansible.builtin.set_fact:
-    k3s_already_running: "{{ k3s_local_status.status is defined and k3s_local_status.status.ActiveState == 'active' }}"
+    k3s_cluster_already_running: "{{ k3s_cluster_local_state.ActiveState | default('inactive') == 'active' }}"
 
 # --- Probe the VIP: does a cluster already exist without me? (I may have been rebuilt) ---
 - name: Probe the VIP to check whether a cluster already exists
@@ -17,14 +21,14 @@
     validate_certs: false
     status_code: [200, 401, 403]
     timeout: 5
-  register: vip_probe
+  register: k3s_cluster_vip_probe
   failed_when: false
-  when: not k3s_already_running
+  when: not k3s_cluster_already_running
 
 - name: Set fact — does a cluster already exist and answer on the VIP?
   ansible.builtin.set_fact:
-    cluster_exists: "{{ (vip_probe.status | default(0)) in [200, 401, 403] }}"
-  when: not k3s_already_running
+    k3s_cluster_cluster_exists: "{{ (k3s_cluster_vip_probe.status | default(0)) in [200, 401, 403] }}"
+  when: not k3s_cluster_already_running
 
 # --- Safety rail: refuse a requested restore against a still-live cluster ---
 # A restore is destructive by design (--cluster-reset wipes this node's
@@ -36,86 +40,126 @@
 - name: Refuse to restore if a live cluster is currently answering on the VIP
   ansible.builtin.fail:
     msg: >-
-      k3s_restore_from_snapshot=true but {{ k3s_api_server }}:{{ k3s_api_port }}
+      k3s_cluster_restore_from_snapshot=true but {{ k3s_api_server }}:{{ k3s_api_port }}
       is currently answering — a live cluster already exists. Aborting
       rather than restoring over it. If you genuinely intend to replace a
       live cluster's state with an older snapshot, do that as a separate,
       deliberate action, not via this automatic path.
   when:
-    - k3s_restore_from_snapshot | default(false)
-    - cluster_exists | default(false)
-    - not k3s_already_running
+    - k3s_cluster_restore_from_snapshot | default(false)
+    - k3s_cluster_cluster_exists | default(false)
+    - not k3s_cluster_already_running
 
 # --- Defensive cleanup before any path below — safe no-op on a
 # genuinely fresh Terraform-provisioned VM, real work only if this node
 # carries leftover state from a previous install/identity. ---
 - name: Defensive cleanup of any prior k3s state before bootstrapping
   ansible.builtin.include_tasks: cleanup-stale-state.yml
-  when: not k3s_already_running
+  when: not k3s_cluster_already_running
 
 # --- Path C: restore from an S3-hosted etcd snapshot (explicit opt-in only) ---
 - name: Restore control plane from etcd snapshot (Path C — full cluster loss)
   ansible.builtin.include_tasks: restore.yml
   when:
-    - k3s_restore_from_snapshot | default(false)
-    - not (cluster_exists | default(false))
-    - not k3s_already_running
+    - k3s_cluster_restore_from_snapshot | default(false)
+    - not (k3s_cluster_cluster_exists | default(false))
+    - not k3s_cluster_already_running
 
 - name: Set fact — did this run take the restore path?
   ansible.builtin.set_fact:
-    k3s_did_restore: "{{ (k3s_restore_from_snapshot | default(false)) and not (cluster_exists | default(false)) and not k3s_already_running }}"
+    k3s_cluster_did_restore: >-
+      {{ (k3s_cluster_restore_from_snapshot | default(false)) and not (k3s_cluster_cluster_exists | default(false))
+         and not k3s_cluster_already_running }}
+
+# The paths below (A rejoin / B init) and their join/restore siblings used
+# to pipe curl straight into sh. Fetch the upstream installer once per node
+# (idempotent) and invoke it with the command module so the flags stay
+# explicit, reviewable, and free of shell quoting.
+- name: Fetch the k3s installer script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: "{{ k3s_cluster_installer_script }}"
+    mode: "0755"
+
+- name: Check whether the k3s binary is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_cluster_binary
 
 # --- Path A: rejoin existing cluster (this node was rebuilt; cluster survived on the VIP) ---
 - name: Rejoin existing cluster (this node was rebuilt; cluster survived on the VIP)
-  ansible.builtin.shell: >
-    curl -sfL https://get.k3s.io |
-    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
-    --server "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
-    --token "{{ vault_k3s_cluster_token }}"
-    --flannel-backend=none
-    --disable traefik
-    --tls-san "{{ k3s_api_server }}"
-    --etcd-s3
-    --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
-    --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
-    --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_cluster_installer_script }}"
+      - server
+      - --server
+      - "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
+      - --token
+      - "{{ vault_k3s_cluster_token }}"
+      - --flannel-backend=none
+      - --disable
+      - traefik
+      - --tls-san
+      - "{{ k3s_api_server }}"
+      - --etcd-s3
+      - --etcd-s3-config-secret
+      - "{{ k3s_cluster_etcd_s3_config_secret }}"
+      - --etcd-snapshot-schedule-cron
+      - "{{ k3s_cluster_etcd_snapshot_schedule_cron }}"
+      - --etcd-snapshot-retention
+      - "{{ k3s_cluster_etcd_snapshot_retention }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  changed_when: true
   when:
-    - not k3s_already_running
-    - cluster_exists | default(false)
+    - not k3s_cluster_already_running
+    - k3s_cluster_cluster_exists | default(false)
+    - not k3s_cluster_binary.stat.exists
 
 # --- Path B: genuinely no cluster exists and no restore was requested — this node initializes fresh ---
 - name: Check for a local cluster-init marker (belt-and-braces against accidental re-init)
   ansible.builtin.stat:
     path: /etc/rancher/k3s/cluster-initialized
-  register: cluster_init_marker
+  register: k3s_cluster_cluster_init_marker
   when:
-    - not k3s_already_running
-    - not (cluster_exists | default(false))
-    - not (k3s_restore_from_snapshot | default(false))
+    - not k3s_cluster_already_running
+    - not (k3s_cluster_cluster_exists | default(false))
+    - not (k3s_cluster_restore_from_snapshot | default(false))
 
 - name: Initialize fresh HA control plane via cluster-init
-  ansible.builtin.shell: >
-    curl -sfL https://get.k3s.io |
-    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
-    --cluster-init
-    --token "{{ vault_k3s_cluster_token }}"
-    --flannel-backend=none
-    --disable traefik
-    --disable servicelb
-    --tls-san "{{ k3s_api_server }}"
-    --etcd-s3
-    --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
-    --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
-    --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
-  register: cluster_init_result
-  when: cluster_init_marker.stat is defined and not cluster_init_marker.stat.exists
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_cluster_installer_script }}"
+      - server
+      - --cluster-init
+      - --token
+      - "{{ vault_k3s_cluster_token }}"
+      - --flannel-backend=none
+      - --disable
+      - traefik
+      - --disable
+      - servicelb
+      - --tls-san
+      - "{{ k3s_api_server }}"
+      - --etcd-s3
+      - --etcd-s3-config-secret
+      - "{{ k3s_cluster_etcd_s3_config_secret }}"
+      - --etcd-snapshot-schedule-cron
+      - "{{ k3s_cluster_etcd_snapshot_schedule_cron }}"
+      - --etcd-snapshot-retention
+      - "{{ k3s_cluster_etcd_snapshot_retention }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  register: k3s_cluster_cluster_init_result
+  changed_when: true
+  when: k3s_cluster_cluster_init_marker.stat is defined and not k3s_cluster_cluster_init_marker.stat.exists
 
 - name: Record cluster-init marker so a later re-run can't accidentally re-initialize
   ansible.builtin.file:
     path: /etc/rancher/k3s/cluster-initialized
     state: touch
-    mode: '0600'
-  when: cluster_init_result is defined and cluster_init_result is not skipped
+    mode: "0600"
+  when: k3s_cluster_cluster_init_result is defined and k3s_cluster_cluster_init_result is not skipped
 
 # --- Bring the service up, regardless of which of A/B was taken above ---
 # Skipped for Path C — restore.yml already brings its own service up,
@@ -126,7 +170,7 @@
     name: k3s
     state: started
     enabled: true
-  when: not (k3s_did_restore | default(false))
+  when: not (k3s_cluster_did_restore | default(false))
 
 - name: Wait for local API server port to accept connections
   ansible.builtin.wait_for:
@@ -134,7 +178,7 @@
     port: "{{ k3s_api_port }}"
     delay: 5
     timeout: 60
-  when: not (k3s_did_restore | default(false))
+  when: not (k3s_cluster_did_restore | default(false))
 
 # --- Stand up kube-vip — only on a true fresh init. If this node rejoined
 # an existing cluster (Path A), kube-vip's DaemonSet is already running
@@ -144,5 +188,5 @@
     src: files/kube-vip.yaml
     dest: /var/lib/rancher/k3s/server/manifests/kube-vip.yaml
     owner: root
-    mode: '0644'
-  when: cluster_init_result is defined and cluster_init_result is not skipped
+    mode: "0644"
+  when: k3s_cluster_cluster_init_result is defined and k3s_cluster_cluster_init_result is not skipped

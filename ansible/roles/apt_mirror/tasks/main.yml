@@ -5,8 +5,8 @@
     dest: /etc/apt/sources.list.d/debian.sources
     owner: root
     group: root
-    mode: '0644'
-  register: apt_mirror_sources
+    mode: "0644"
+  notify: Refresh apt cache against the new sources
 
 # Debian cloud images (and older bookworm LXCs) may still ship a classic
 # sources.list — deb822 + sources.list both active means duplicate entries
@@ -15,17 +15,18 @@
 - name: Check for a legacy sources.list
   ansible.builtin.stat:
     path: /etc/apt/sources.list
-  register: legacy_sources_list
+  register: apt_mirror_legacy_sources_list
 
 - name: Disable legacy sources.list if present and non-empty
   ansible.builtin.command:
     cmd: mv /etc/apt/sources.list /etc/apt/sources.list.disabled-by-apt-mirror
   when:
-    - legacy_sources_list.stat.exists
-    - legacy_sources_list.stat.size > 0
+    - apt_mirror_legacy_sources_list.stat.exists
+    - apt_mirror_legacy_sources_list.stat.size > 0
   changed_when: true
 
-- name: Refresh apt cache against the new sources
-  ansible.builtin.apt:
-    update_cache: true
-  when: apt_mirror_sources.changed
+# Flush immediately: roles that follow in the same play (e.g. jellyfin,
+# which installs from this mirror) rely on a fresh apt cache. A plain
+# end-of-play handler would run too late for their apt installs.
+- name: Refresh the apt cache before downstream package work
+  ansible.builtin.meta: flush_handlers

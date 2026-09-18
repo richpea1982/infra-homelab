@@ -2,12 +2,16 @@
 - name: Check if K3s service is already active on this node
   ansible.builtin.systemd:
     name: k3s
-  register: k3s_local_status
+  register: k3s_cluster_local_status
   failed_when: false
+
+- name: Set fact — expose the active state of the local K3s service
+  ansible.builtin.set_fact:
+    k3s_cluster_local_state: "{{ k3s_cluster_local_status.status | default({}) }}"
 
 - name: Set fact — is K3s already running here?
   ansible.builtin.set_fact:
-    k3s_already_running: "{{ k3s_local_status.status is defined and k3s_local_status.status.ActiveState == 'active' }}"
+    k3s_cluster_already_running: "{{ k3s_cluster_local_state.ActiveState | default('inactive') == 'active' }}"
 
 # Defensive cleanup before attempting a (re)join — closes the same gap
 # found during the 2026-08 DR drill (stale TLS certs / db state from a
@@ -16,7 +20,7 @@
 # Terraform-provisioned VM.
 - name: Defensive cleanup of any prior k3s state before joining
   ansible.builtin.include_tasks: cleanup-stale-state.yml
-  when: not k3s_already_running
+  when: not k3s_cluster_already_running
 
 - name: Wait for the VIP to be reachable before attempting to join
   ansible.builtin.uri:
@@ -24,26 +28,50 @@
     validate_certs: false
     status_code: [200, 401, 403]
     timeout: 5
-  register: vip_probe
+  register: k3s_cluster_vip_probe
   retries: 30
   delay: 10
-  until: (vip_probe.status | default(0)) in [200, 401, 403]
-  when: not k3s_already_running
+  until: (k3s_cluster_vip_probe.status | default(0)) in [200, 401, 403]
+  when: not k3s_cluster_already_running
+
+- name: Fetch the k3s installer script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: "{{ k3s_cluster_installer_script }}"
+    mode: "0755"
+
+- name: Check whether the k3s binary is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_cluster_binary
 
 - name: Join existing cluster via the VIP
-  ansible.builtin.shell: >
-    curl -sfL https://get.k3s.io |
-    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
-    --server "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
-    --token "{{ vault_k3s_cluster_token }}"
-    --flannel-backend=none
-    --disable traefik
-    --tls-san "{{ k3s_api_server }}"
-    --etcd-s3
-    --etcd-s3-config-secret "{{ etcd_s3_config_secret }}"
-    --etcd-snapshot-schedule-cron "{{ etcd_snapshot_schedule_cron }}"
-    --etcd-snapshot-retention "{{ etcd_snapshot_retention }}"
-  when: not k3s_already_running
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_cluster_installer_script }}"
+      - server
+      - --server
+      - "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
+      - --token
+      - "{{ vault_k3s_cluster_token }}"
+      - --flannel-backend=none
+      - --disable
+      - traefik
+      - --tls-san
+      - "{{ k3s_api_server }}"
+      - --etcd-s3
+      - --etcd-s3-config-secret
+      - "{{ k3s_cluster_etcd_s3_config_secret }}"
+      - --etcd-snapshot-schedule-cron
+      - "{{ k3s_cluster_etcd_snapshot_schedule_cron }}"
+      - --etcd-snapshot-retention
+      - "{{ k3s_cluster_etcd_snapshot_retention }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  changed_when: true
+  when:
+    - not k3s_cluster_already_running
+    - not k3s_cluster_binary.stat.exists
 
 - name: Ensure secondary k3s service engines are verified running
   ansible.builtin.systemd:

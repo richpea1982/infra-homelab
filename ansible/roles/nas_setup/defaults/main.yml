@@ -1,16 +1,16 @@
 ---
 # Packages to install
-nas_packages:
+nas_setup_nas_packages:
   - samba
   - samba-common-bin
   - nfs-kernel-server
   - zfsutils-linux
   - python3-boto3
 # ZFS Configuration
-nas_pool_name: "storage_pool"
-nas_mount_point_base: "/mnt/storage"
+nas_setup_nas_pool_name: "storage_pool"
+nas_setup_nas_mount_point_base: "/mnt/storage"
 
-zfs_raidz2_disks:
+nas_setup_zfs_raidz2_disks:
   - /dev/disk/by-id/ata-WDC_WD10JPVX-75JC3T0_WXK1E63ZHKV7
   - /dev/disk/by-id/ata-TOSHIBA_MQ01ABD100_37JOPUHTT
   - /dev/disk/by-id/ata-ST1000LM024_HN-M101MBB_S32XJ9GGC10989
@@ -20,7 +20,7 @@ zfs_raidz2_disks:
 
 # Grouping datasets with their optimized properties
 # Note: minio is marked as local_only: true so NFS skips it
-nas_datasets:
+nas_setup_nas_datasets:
   # CHANGED: seafile is moving from the standalone LXC (local-only ZFS
   # mount) to K3s (seafile-server + seahub, custom images). Both pods
   # need concurrent RWX access to the same library data, so this is now
@@ -79,7 +79,7 @@ nas_datasets:
         options: "rw,sync,no_subtree_check,no_root_squash,insecure"
 
 # MinIO Configuration
-minio_download_url: "https://dl.min.io/server/minio/release/linux-amd64/minio"
-minio_version: "RELEASE.2026-07-03T16-39-21Z"
-minio_user: "minio"
-minio_group: "minio"
+nas_setup_minio_download_url: "https://dl.min.io/server/minio/release/linux-amd64/minio"
+nas_setup_minio_version: "RELEASE.2026-07-03T16-39-21Z"
+nas_setup_minio_user: "minio"
+nas_setup_minio_group: "minio"

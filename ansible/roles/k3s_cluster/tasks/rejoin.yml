@@ -13,16 +13,20 @@
 - name: Check if K3s service is already active on this node
   ansible.builtin.systemd:
     name: k3s
-  register: k3s_local_status
+  register: k3s_cluster_local_status
   failed_when: false
+
+- name: Set fact — expose the active state of the local K3s service
+  ansible.builtin.set_fact:
+    k3s_cluster_local_state: "{{ k3s_cluster_local_status.status | default({}) }}"
 
 - name: Set fact — is K3s already running here?
   ansible.builtin.set_fact:
-    k3s_already_running: "{{ k3s_local_status.status is defined and k3s_local_status.status.ActiveState == 'active' }}"
+    k3s_cluster_already_running: "{{ k3s_cluster_local_state.ActiveState | default('inactive') == 'active' }}"
 
 - name: Defensive cleanup of any prior k3s state before joining
   ansible.builtin.include_tasks: cleanup-stale-state.yml
-  when: not k3s_already_running
+  when: not k3s_cluster_already_running
 
 - name: Remove stale VIP address if bound to this node's interface
   ansible.builtin.command: "ip addr del {{ k3s_api_server }}/32 dev eth0"
@@ -35,11 +39,11 @@
     validate_certs: false
     status_code: [200, 401, 403]
     timeout: 5
-  register: vip_probe
+  register: k3s_cluster_vip_probe
   retries: 30
   delay: 10
-  until: (vip_probe.status | default(0)) in [200, 401, 403]
-  when: not k3s_already_running
+  until: (k3s_cluster_vip_probe.status | default(0)) in [200, 401, 403]
+  when: not k3s_cluster_already_running
 
 # ------------------------------------------------------------------
 # Evict stale etcd member + Kubernetes Node object from the live
@@ -49,21 +53,21 @@
 # being rejoined; otherwise use any other inventory host.
 # ------------------------------------------------------------------
 - name: Evict this node's stale etcd membership and Node object
-  when: not k3s_already_running
+  when: not k3s_cluster_already_running
   block:
     - name: Set target identity for eviction
       ansible.builtin.set_fact:
-        target_node_name: "{{ inventory_hostname }}"
-        target_node_ip: "{{ ansible_host }}"
+        k3s_cluster_target_node_name: "{{ inventory_hostname }}"
+        k3s_cluster_target_node_ip: "{{ ansible_host }}"
 
     - name: Build list of other cluster members
       ansible.builtin.set_fact:
-        other_peers: "{{ groups['k3s_cluster'] | difference([inventory_hostname]) }}"
+        k3s_cluster_other_peers: "{{ groups['k3s_cluster'] | difference([inventory_hostname]) }}"
 
     - name: Prefer primary peer (k3s_node_index == 1) when available
       ansible.builtin.set_fact:
-        eviction_peer: "{{ item }}"
-      loop: "{{ other_peers }}"
+        k3s_cluster_eviction_peer: "{{ item }}"
+      loop: "{{ k3s_cluster_other_peers }}"
       when:
         - hostvars[item].k3s_node_index is defined
         - (hostvars[item].k3s_node_index | int) == 1
@@ -72,8 +76,8 @@
 
     - name: Fall back to first other peer if primary is the one being rejoined
       ansible.builtin.set_fact:
-        eviction_peer: "{{ other_peers | first }}"
-      when: eviction_peer is not defined
+        k3s_cluster_eviction_peer: "{{ k3s_cluster_other_peers | first }}"
+      when: k3s_cluster_eviction_peer is not defined
 
     - name: Run eviction on the selected peer
       ansible.builtin.include_tasks: evict-stale-member.yml
@@ -81,19 +85,36 @@
 - name: Write k3s config.yaml for joining/rejoining this node
   ansible.builtin.template:
     src: k3s-server-config.yaml.j2
-    dest: "{{ k3s_config_dir }}/config.yaml"
+    dest: "{{ k3s_cluster_config_dir }}/config.yaml"
     owner: root
     group: root
-    mode: '0600'
+    mode: "0600"
   vars:
     k3s_config_server_url: "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
-  when: not k3s_already_running
+  when: not k3s_cluster_already_running
+
+- name: Fetch the k3s installer script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: "{{ k3s_cluster_installer_script }}"
+    mode: "0755"
+
+- name: Check whether the k3s binary is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_cluster_binary
 
 - name: Join existing cluster via the VIP
-  ansible.builtin.shell: >
-    curl -sfL https://get.k3s.io |
-    INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server
-  when: not k3s_already_running
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_cluster_installer_script }}"
+      - server
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  changed_when: true
+  when:
+    - not k3s_cluster_already_running
+    - not k3s_cluster_binary.stat.exists
 
 - name: Ensure k3s service is verified running
   ansible.builtin.systemd:

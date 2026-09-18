@@ -2,6 +2,6 @@
 - name: Patch mirror_managed hosts
   hosts: mirror_managed
   become: true
-  serial: 1   # one host at a time — a k3s node mid-reboot shouldn't overlap another
+  serial: 1 # one host at a time — a k3s node mid-reboot shouldn't overlap another
   roles:
-    - role: ../roles/system_updates
+    - role: system_updates

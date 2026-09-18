@@ -6,7 +6,11 @@
   vars_files:
     - ../group_vars/all/vault.yml
 
-  roles:
-    - role: ../roles/apt_mirror
-    - role: ../roles/k3s_cluster
-      tasks_from: rejoin
+  tasks:
+    - name: Orchestrate K3s Node Join
+      ansible.builtin.import_role:
+        name: apt_mirror
+    - name: Join existing cluster or rejoin as existing member
+      ansible.builtin.import_role:
+        name: k3s_cluster
+        tasks_from: rejoin

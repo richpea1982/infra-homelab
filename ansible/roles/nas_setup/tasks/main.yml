@@ -1,15 +1,15 @@
 ---
 - name: Execute NAS Setup with Privilege Escalation
+  become: true
   block:
     - name: Update system and install NAS packages
-      include_tasks: packages.yml
+      ansible.builtin.include_tasks: packages.yml
 
     - name: Configure ZFS Storage
-      include_tasks: zfs.yml
+      ansible.builtin.include_tasks: zfs.yml
 
     - name: Configure NFS Exports
-      include_tasks: file_share.yml
+      ansible.builtin.include_tasks: file_share.yml
 
     - name: Deploy Standalone MinIO Backend
-      include_tasks: minio.yml
-  become: true
+      ansible.builtin.include_tasks: minio.yml

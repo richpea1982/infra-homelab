@@ -1,0 +1,14 @@
+---
+- name: Run apt update if sources changed
+  ansible.builtin.apt:
+    update_cache: true
+  become: true
+  changed_when: false
+
+- name: Reload NFS exports if configuration changed
+  ansible.builtin.command: exportfs -ra
+  changed_when: true
+
+- name: Update initramfs if ZFS configuration changed
+  ansible.builtin.command: update-initramfs -u
+  changed_when: true

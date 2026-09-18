@@ -5,15 +5,20 @@
   gather_facts: false
   tasks:
     - name: Remove stale known_hosts entries for both names and IPs
-      ansible.builtin.command: >
-         ssh-keygen -f /root/.ssh/known_hosts -R {{ item }}
-      loop: "{{ groups['k3s_cluster'] + [hostvars[groups['k3s_cluster'][0]].ansible_host, hostvars[groups['k3s_cluster'][1]].ansible_host, hostvars[groups['k3s_cluster'][2]].ansible_host] }}"
-      ignore_errors: true
-      changed_when: true
+      ansible.builtin.known_hosts:
+        path: /root/.ssh/known_hosts
+        name: "{{ item }}"
+        state: absent
+      loop: >-
+        {{ groups['k3s_cluster'] +
+        [hostvars[groups['k3s_cluster'][0]].ansible_host,
+        hostvars[groups['k3s_cluster'][1]].ansible_host,
+        hostvars[groups['k3s_cluster'][2]].ansible_host] }}
 
     - name: Scan and trust the current SSH host key for each K3s node IP
       ansible.builtin.command: "ssh-keyscan -T 10 {{ hostvars[item]['ansible_host'] }}"
       with_items: "{{ groups['k3s_cluster'] }}"
+      changed_when: false
 
 - name: Orchestrate HA K3s Cluster Provisioning
   hosts: k3s_cluster
@@ -23,6 +28,5 @@
     - ../group_vars/all/vault.yml
 
   roles:
-    - role: ../roles/apt_mirror
-    - role: ../roles/k3s_cluster
-
+    - role: apt_mirror
+    - role: k3s_cluster

@@ -1,7 +1,7 @@
 ---
 # handlers/main.yml
 
-- name: restart jellyfin
+- name: Restart jellyfin
   ansible.builtin.systemd:
     name: jellyfin
     state: restarted

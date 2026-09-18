@@ -1,3 +1,8 @@
 group_vars/all/vault.yml
 # Local environment secrets
 .env
+secrets/
+ansible/collections/
+ansible/.ansible/
+
+terraform/.terraform.lock.hcl

@@ -27,7 +27,7 @@
     state: directory
     owner: root
     group: root
-    mode: '0700'
+    mode: "0700"
 
 - name: Generate WireGuard private key (idempotent — never overwrites an existing identity)
   ansible.builtin.shell: |
@@ -43,7 +43,7 @@
     path: "{{ wg_relay_private_key_path }}"
     owner: root
     group: root
-    mode: '0600'
+    mode: "0600"
 
 - name: Derive the public key from the private key
   ansible.builtin.shell: |
@@ -74,9 +74,9 @@
     dest: "{{ wg_relay_config_dir }}/{{ wg_relay_interface }}.conf"
     owner: root
     group: root
-    mode: '0600'
+    mode: "0600"
   no_log: true
-  notify: restart wireguard
+  notify: Restart wireguard
 
 - name: Configure persistent IPv4 forwarding (needed to route between WireGuard peers)
   ansible.builtin.copy:
@@ -85,13 +85,14 @@
       net.ipv4.ip_forward = 1
     owner: root
     group: root
-    mode: '0644'
-  register: wg_relay_sysctl_conf
+    mode: "0644"
+  notify: Apply sysctl changes immediately
 
-- name: Apply sysctl changes immediately
-  ansible.builtin.command: sysctl --system
-  when: wg_relay_sysctl_conf.changed
-  changed_when: true
+# Flush now so IPv4 forwarding is active before the interface work below;
+# without this a plain end-of-play handler would apply sysctl after wg-quick
+# brings the interface up.
+- name: Apply the sysctl changes before the interface work proceeds
+  ansible.builtin.meta: flush_handlers
 
 # --- Host firewall ---
 # Oracle's VCN Security List controls the network edge only. The
@@ -100,48 +101,51 @@
 # will NOT let WireGuard traffic through.
 - name: Check whether the INPUT accept rule for WireGuard already exists
   ansible.builtin.command: "iptables -C INPUT -p udp --dport {{ wg_relay_port }} -j ACCEPT"
-  register: wg_input_rule_check
+  register: wg_relay_wg_input_rule_check
   failed_when: false
   changed_when: false
 
 - name: Allow the WireGuard UDP port through the host firewall
   ansible.builtin.command: "iptables -A INPUT -p udp --dport {{ wg_relay_port }} -j ACCEPT"
-  when: wg_input_rule_check.rc != 0
+  changed_when: true
+  when: wg_relay_wg_input_rule_check.rc != 0
 
 - name: Check whether the FORWARD-in rule for wg0 already exists
   ansible.builtin.command: "iptables -C FORWARD -i {{ wg_relay_interface }} -j ACCEPT"
-  register: wg_forward_in_check
+  register: wg_relay_wg_forward_in_check
   failed_when: false
   changed_when: false
 
 - name: Allow forwarding in through the WireGuard interface
   ansible.builtin.command: "iptables -A FORWARD -i {{ wg_relay_interface }} -j ACCEPT"
-  when: wg_forward_in_check.rc != 0
+  changed_when: true
+  when: wg_relay_wg_forward_in_check.rc != 0
 
 - name: Check whether the FORWARD-out rule for wg0 already exists
   ansible.builtin.command: "iptables -C FORWARD -o {{ wg_relay_interface }} -j ACCEPT"
-  register: wg_forward_out_check
+  register: wg_relay_wg_forward_out_check
   failed_when: false
   changed_when: false
 
 - name: Allow forwarding out through the WireGuard interface
   ansible.builtin.command: "iptables -A FORWARD -o {{ wg_relay_interface }} -j ACCEPT"
-  when: wg_forward_out_check.rc != 0
+  changed_when: true
+  when: wg_relay_wg_forward_out_check.rc != 0
 
 - name: Persist iptables rules across reboots
   ansible.builtin.command: "iptables-save"
-  register: wg_iptables_save
+  register: wg_relay_wg_iptables_save
   changed_when: false
 
 - name: Write persisted rules file
   ansible.builtin.copy:
-    content: "{{ wg_iptables_save.stdout }}\n"
+    content: "{{ wg_relay_wg_iptables_save.stdout }}\n"
     dest: /etc/iptables/rules.v4
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
 
-- name: Ensure wg-quick@{{ wg_relay_interface }} is enabled and started
+- name: Ensure the WireGuard interface is enabled and started
   ansible.builtin.systemd:
     name: "wg-quick@{{ wg_relay_interface }}"
     state: started
