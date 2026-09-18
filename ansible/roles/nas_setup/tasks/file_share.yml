@@ -11,11 +11,7 @@
     owner: root
     group: root
     mode: "0644"
-  register: nas_setup_nfs_exports_updated
-
-- name: Reload NFS exports if configuration changed
-  ansible.builtin.command: exportfs -ra
-  when: nas_setup_nfs_exports_updated.changed
+  notify: Reload NFS exports if configuration changed
 
 - name: Ensure NFS server service is running and enabled
   ansible.builtin.service:

@@ -86,12 +86,13 @@
     owner: root
     group: root
     mode: "0644"
-  register: wg_relay_sysctl_conf
+  notify: Apply sysctl changes immediately
 
-- name: Apply sysctl changes immediately
-  ansible.builtin.command: sysctl --system
-  when: wg_relay_sysctl_conf.changed
-  changed_when: true
+# Flush now so IPv4 forwarding is active before the interface work below;
+# without this a plain end-of-play handler would apply sysctl after wg-quick
+# brings the interface up.
+- name: Apply the sysctl changes before the interface work proceeds
+  ansible.builtin.meta: flush_handlers
 
 # --- Host firewall ---
 # Oracle's VCN Security List controls the network edge only. The

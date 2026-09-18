@@ -1,0 +1,5 @@
+---
+- name: Refresh apt cache against the new sources
+  ansible.builtin.apt:
+    update_cache: true
+  changed_when: false

@@ -6,12 +6,10 @@
     replace: "\\1 contrib"
   become: true # <--- Force it right here explicitly
   register: nas_setup_apt_sources_updated
+  notify: Run apt update if sources changed
 
-- name: Run apt update if sources changed
-  ansible.builtin.apt:
-    update_cache: true
-  become: true
-  when: nas_setup_apt_sources_updated.changed
+- name: Flush handlers so apt update runs before the upgrade and installs below
+  ansible.builtin.meta: flush_handlers
 
 - name: Run apt upgrade
   ansible.builtin.apt:

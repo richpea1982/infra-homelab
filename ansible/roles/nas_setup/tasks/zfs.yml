@@ -8,11 +8,7 @@
     owner: root
     group: root
     mode: "0644"
-  register: nas_setup_zfs_conf_updated
-
-- name: Update initramfs if ZFS configuration changed
-  ansible.builtin.command: update-initramfs -u
-  when: nas_setup_zfs_conf_updated.changed
+  notify: Update initramfs if ZFS configuration changed
 
 - name: Ensure ZFS kernel module is loaded
   community.general.modprobe:
