@@ -49,6 +49,5 @@ jobs:
           ANSIBLE_VAULT_PASSWORD_FILE: /tmp/vault_pass
         run: >
           ansible-playbook --syntax-check
-          --config-file ansible/ansible.cfg
           -i ansible/hosts/hosts.ini
           ansible/playbooks/*.yml ansible/playbooks/*.yaml
